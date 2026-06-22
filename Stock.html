@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#0E1116" />
+<title>Tabia'S Sound · Control de Stock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --chrome:#0E1116; --chrome-2:#171C24; --chrome-line:#272E38;
+    --bg:#F4F5F7; --card:#FFFFFF; --text:#14171A; --muted:#6B7280; --line:#E6E8EC;
+    --teal:#0EA5A4; --teal-dark:#0B8281; --teal-soft:#E0F5F4;
+    --danger:#DC2626; --ok:#16A34A;
+    --son:#2563EB; --ilu:#F59E0B; --vid:#22C55E; --ina:#FB7185;
+    --gen:#64748B; --tar:#6366F1; --gral:#9CA3AF;
+    --radius:14px; --shadow:0 1px 2px rgba(16,22,30,.06),0 4px 16px rgba(16,22,30,.06);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);
+    -webkit-font-smoothing:antialiased;overscroll-behavior-y:none}
+  #root{min-height:100vh}
+  .mono{font-variant-numeric:tabular-nums}
+  .wordmark{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+  .eyebrow{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.14em;font-weight:500;font-size:11px;color:var(--muted)}
+  button{font-family:inherit;cursor:pointer;border:none;background:none}
+  input,select{font-family:inherit}
+
+  /* ---------- LOGIN ---------- */
+  .login-wrap{min-height:100vh;background:
+    radial-gradient(1200px 500px at 50% -10%, #1d2530 0%, transparent 60%), var(--chrome);
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  .login-card{width:100%;max-width:380px}
+  .login-brand{text-align:center;margin-bottom:30px}
+  .login-brand .name{font-family:'Oswald';text-transform:uppercase;letter-spacing:.08em;font-weight:700;
+    font-size:30px;color:#fff;line-height:1}
+  .login-brand .sub{font-family:'Oswald';text-transform:uppercase;letter-spacing:.32em;font-weight:400;
+    font-size:12px;color:var(--teal);margin-top:10px}
+  .login-box{background:var(--chrome-2);border:1px solid var(--chrome-line);border-radius:var(--radius);padding:26px 22px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;font-weight:600;color:#9aa4b2;margin-bottom:6px}
+  .field input{width:100%;padding:13px 14px;border-radius:10px;border:1px solid var(--chrome-line);
+    background:#0E1218;color:#fff;font-size:15px;outline:none}
+  .field input:focus{border-color:var(--teal)}
+  .btn-primary{width:100%;padding:13px;border-radius:10px;background:var(--teal);color:#04201f;
+    font-weight:700;font-size:15px;transition:.15s}
+  .btn-primary:hover{background:var(--teal-dark);color:#fff}
+  .btn-primary:disabled{opacity:.6;cursor:default}
+  .login-err{background:#3a1518;border:1px solid #5b2126;color:#ffb4b4;font-size:13px;
+    padding:10px 12px;border-radius:9px;margin-bottom:14px}
+
+  /* ---------- SHELL ---------- */
+  .topbar{position:sticky;top:0;z-index:30;background:var(--chrome);color:#fff;
+    display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
+    border-bottom:1px solid var(--chrome-line)}
+  .topbar .brand{font-family:'Oswald';text-transform:uppercase;letter-spacing:.06em;font-weight:600;font-size:17px}
+  .topbar .brand span{color:var(--teal)}
+  .topbar .who{display:flex;align-items:center;gap:10px}
+  .topbar .who .nm{font-size:13px;color:#c2c9d2;text-align:right;line-height:1.2}
+  .topbar .who .nm small{display:block;color:#7e8794;font-size:11px}
+  .icon-btn{width:36px;height:36px;border-radius:9px;background:var(--chrome-2);color:#cbd2db;
+    display:grid;place-items:center;font-size:16px;border:1px solid var(--chrome-line)}
+  .icon-btn:hover{color:#fff}
+
+  .nav{position:sticky;top:57px;z-index:20;background:#fff;border-bottom:1px solid var(--line);
+    display:flex;gap:4px;padding:0 12px}
+  .nav button{padding:13px 14px;font-size:14px;font-weight:600;color:var(--muted);
+    border-bottom:2.5px solid transparent;margin-bottom:-1px}
+  .nav button.active{color:var(--text);border-color:var(--teal)}
+
+  .page{max-width:980px;margin:0 auto;padding:18px 14px 90px}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px;gap:12px}
+  .page-head h1{font-family:'Oswald';text-transform:uppercase;letter-spacing:.04em;font-weight:600;
+    font-size:22px;margin:0}
+  .page-head .count{font-size:13px;color:var(--muted)}
+
+  /* ---------- SEARCH + FILTERS ---------- */
+  .search{position:relative;margin-bottom:12px}
+  .search input{width:100%;padding:12px 14px 12px 40px;border-radius:11px;border:1px solid var(--line);
+    background:#fff;font-size:15px;outline:none;box-shadow:var(--shadow)}
+  .search input:focus{border-color:var(--teal)}
+  .search .mag{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted)}
+  .chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;-webkit-overflow-scrolling:touch}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{white-space:nowrap;padding:7px 12px;border-radius:999px;border:1px solid var(--line);
+    background:#fff;font-size:13px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .chip .dot{width:9px;height:9px;border-radius:50%}
+  .chip.active{color:var(--text);border-color:var(--text);background:#fff}
+  .chip.active.all{background:var(--chrome);color:#fff;border-color:var(--chrome)}
+
+  /* ---------- PRODUCT LIST ---------- */
+  .list{display:flex;flex-direction:column;gap:9px}
+  .pcard{display:flex;align-items:stretch;background:var(--card);border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden;cursor:pointer;border:1px solid transparent;transition:.12s}
+  .pcard:hover{border-color:var(--line);transform:translateY(-1px)}
+  .pcard .bar{width:5px;flex:0 0 5px}
+  .pcard .thumb{width:58px;height:58px;flex:0 0 58px;margin:9px 0 9px 10px;border-radius:10px;
+    background:#F1F3F5;display:grid;place-items:center;overflow:hidden;color:#aab1ba}
+  .pcard .thumb img{width:100%;height:100%;object-fit:cover}
+  .pcard .body{flex:1;min-width:0;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:5px}
+  .pcard .nm{font-size:14.5px;font-weight:600;line-height:1.25;overflow:hidden;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .pcard .meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;display:inline-flex;align-items:center;gap:5px}
+  .tag .dot{width:7px;height:7px;border-radius:50%}
+  .tag.area{background:#F3F4F6;color:#4b5563}
+  .tag.tipo-ser{background:#EAF0FF;color:#2540a8}
+  .tag.tipo-gra{background:#EAF7EF;color:#1d7a44}
+  .tag.kit{background:#FBEFEA;color:#9a4a25}
+  .pcard .right{flex:0 0 auto;padding:10px 14px 10px 6px;display:flex;flex-direction:column;
+    align-items:flex-end;justify-content:center;gap:3px}
+  .pcard .qty{font-family:'Oswald';font-weight:600;font-size:20px;line-height:1}
+  .pcard .qty small{font-size:11px;color:var(--muted);font-weight:500;font-family:'Inter'}
+  .pcard .cod{font-size:11px;color:var(--muted);font-family:ui-monospace,monospace}
+
+  .pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:18px}
+  .pager button{padding:9px 16px;border-radius:9px;border:1px solid var(--line);background:#fff;
+    font-weight:600;font-size:14px;color:var(--text)}
+  .pager button:disabled{opacity:.4;cursor:default}
+  .pager .info{font-size:13px;color:var(--muted)}
+
+  .empty{text-align:center;padding:60px 20px;color:var(--muted)}
+  .empty .big{font-size:40px;margin-bottom:8px;opacity:.4}
+
+  /* ---------- MODAL ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(14,17,22,.55);z-index:50;display:flex;
+    align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)}
+  .sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;
+    border-radius:20px 20px 0 0;animation:rise .22s ease}
+  @keyframes rise{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+  @media(min-width:600px){.overlay{align-items:center}.sheet{border-radius:20px}}
+  .sheet-head{position:sticky;top:0;background:#fff;padding:16px 18px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;z-index:2}
+  .sheet-head .t{font-family:'Oswald';text-transform:uppercase;letter-spacing:.05em;font-size:15px;font-weight:600}
+  .sheet-body{padding:18px}
+  .img-block{position:relative;width:100%;aspect-ratio:16/10;background:#F1F3F5;border-radius:12px;
+    overflow:hidden;display:grid;place-items:center;color:#aab1ba;margin-bottom:18px}
+  .img-block img{width:100%;height:100%;object-fit:cover}
+  .img-upload{position:absolute;bottom:10px;right:10px;background:rgba(14,17,22,.82);color:#fff;
+    padding:8px 13px;border-radius:9px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
+  .img-upload input{display:none}
+  .frow{margin-bottom:16px}
+  .frow label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;
+    text-transform:uppercase;letter-spacing:.04em}
+  .frow input[type=text],.frow input[type=number],.frow select{width:100%;padding:11px 13px;border-radius:10px;
+    border:1px solid var(--line);font-size:15px;background:#fff;outline:none}
+  .frow input:focus,.frow select:focus{border-color:var(--teal)}
+  .frow input:disabled{background:#F6F7F9;color:#7b828c}
+  .ro{font-size:15px;font-weight:500}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .units{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:4px}
+  .units .u{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .units .u:last-child{border-bottom:none}
+  .units .u .c{font-family:ui-monospace,monospace;font-weight:600}
+  .est{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
+  .est.disponible{background:#EAF7EF;color:#1d7a44}
+  .est.en_evento{background:#EAF0FF;color:#2540a8}
+  .est.en_reparacion{background:#FFF4E5;color:#9a6213}
+  .est.baja,.est.perdido{background:#FBEAEA;color:#a82626}
+  .save-bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:14px 18px;
+    display:flex;gap:10px}
+  .btn-save{flex:1;padding:13px;border-radius:11px;background:var(--teal);color:#04201f;font-weight:700;font-size:15px}
+  .btn-save:hover{background:var(--teal-dark);color:#fff}
+  .btn-save:disabled{opacity:.55}
+  .btn-ghost{padding:13px 18px;border-radius:11px;background:#F1F3F5;color:var(--text);font-weight:600}
+
+  /* ---------- USUARIOS ---------- */
+  .ucard{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;
+    margin-bottom:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .ucard .ui{flex:1;min-width:160px}
+  .ucard .ui .n{font-weight:600;font-size:15px}
+  .ucard .ui .r{font-size:12px;color:var(--muted);margin-top:2px}
+  .ucard .ctrls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .switch{position:relative;width:48px;height:28px;flex:0 0 48px}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:#d1d5db;border-radius:999px;transition:.2s}
+  .slider:before{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;background:#fff;
+    border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .switch input:checked+.slider{background:var(--teal)}
+  .switch input:checked+.slider:before{transform:translateX(20px)}
+  .ucard select{padding:9px 11px;border-radius:9px;border:1px solid var(--line);font-size:14px;background:#fff}
+  .ucard select:disabled{opacity:.45}
+  .ubtn{padding:9px 14px;border-radius:9px;background:var(--chrome);color:#fff;font-weight:600;font-size:13px}
+  .ubtn:disabled{opacity:.4}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--chrome);color:#fff;
+    padding:12px 20px;border-radius:11px;font-size:14px;font-weight:500;z-index:80;box-shadow:0 8px 30px rgba(0,0,0,.3);
+    animation:rise .2s ease}
+  .spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--teal);
+    border-radius:50%;animation:spin .8s linear infinite;margin:50px auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .center-load{display:grid;place-items:center;min-height:60vh}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* Red de seguridad: si algo no carga, mostrarlo en pantalla en vez de quedar en blanco */
+window.onerror=function(msg){var r=document.getElementById('root');
+  if(r&&r.children.length===0){r.style.background='#fff';
+    r.innerHTML='<div style="padding:30px;font-family:system-ui;color:#b00"><h3>Se produjo un error al iniciar</h3><pre style="white-space:pre-wrap;font-size:13px">'+msg+'</pre></div>';}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+
+<script type="text/plain" id="appsrc">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ====== CONFIG ====== */
+const SUPABASE_URL = "https://qnpcrhapvyynwvuljxze.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFucGNyaGFwdnl5bnd2dWxqeHplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMzIzMjEsImV4cCI6MjA5NTkwODMyMX0.ri8T4xQjzwCP9md7spCem0u-Gr6RO3EnmqiTmrtUwRo";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+const PAGE_SIZE = 24;
+
+const AREA_COLORS = {
+  'Sonido':'#2563EB','Iluminación':'#F59E0B','Pantallas LED/Video':'#22C55E',
+  'Sistemas Inalámbricos':'#FB7185','Generadores':'#64748B',
+  'Tarimas y Escenarios':'#6366F1','General/Accesorios':'#9CA3AF'
+};
+const areaColor = n => AREA_COLORS[n] || '#9CA3AF';
+
+/* ====== APP ROOT ====== */
+function App(){
+  const [session,setSession]=useState(undefined); // undefined=loading
+  const [perfil,setPerfil]=useState(undefined);
+
+  useEffect(()=>{
+    sb.auth.getSession().then(({data})=>setSession(data.session||null));
+    const {data:sub}=sb.auth.onAuthStateChange((_e,s)=>setSession(s||null));
+    return ()=>sub.subscription.unsubscribe();
+  },[]);
+
+  useEffect(()=>{
+    if(session===undefined) return;
+    if(!session){ setPerfil(null); return; }
+    sb.from('perfiles').select('*').eq('id',session.user.id).maybeSingle()
+      .then(({data})=>setPerfil(data||{__sinperfil:true}));
+  },[session]);
+
+  if(session===undefined||(session&&perfil===undefined))
+    return <div className="center-load" style={{background:'#0E1116'}}><div className="spinner"/></div>;
+  if(!session) return <Login/>;
+  if(!perfil||perfil.__sinperfil||!perfil.puede_stock) return <NoAccess perfil={perfil}/>;
+  return <Shell perfil={perfil} user={session.user}/>;
+}
+
+/* ====== LOGIN ====== */
+function Login(){
+  const [email,setEmail]=useState(''),[pass,setPass]=useState('');
+  const [err,setErr]=useState(''),[loading,setLoading]=useState(false);
+  const go=async()=>{
+    setErr('');setLoading(true);
+    const {error}=await sb.auth.signInWithPassword({email:email.trim(),password:pass});
+    if(error) setErr('No pudimos iniciar sesión. Revisá el mail y la contraseña.');
+    setLoading(false);
+  };
+  return (
+    <div className="login-wrap">
+      <div className="login-card">
+        <div className="login-brand">
+          <div className="name">Tabia'S Sound</div>
+          <div className="sub">Control de Stock</div>
+        </div>
+        <div className="login-box">
+          {err&&<div className="login-err">{err}</div>}
+          <div className="field"><label>Email</label>
+            <input type="email" value={email} autoCapitalize="off" autoCorrect="off"
+              onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} placeholder="tu@mail.com"/></div>
+          <div className="field"><label>Contraseña</label>
+            <input type="password" value={pass} onChange={e=>setPass(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&go()} placeholder="••••••••"/></div>
+          <button className="btn-primary" disabled={loading||!email||!pass} onClick={go}>
+            {loading?'Entrando…':'Entrar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ====== NO ACCESS ====== */
+function NoAccess({perfil}){
+  return (
+    <div className="login-wrap">
+      <div className="login-card" style={{textAlign:'center'}}>
+        <div className="login-brand"><div className="name">Tabia'S Sound</div>
+          <div className="sub">Control de Stock</div></div>
+        <div className="login-box">
+          <div style={{fontSize:34,marginBottom:10}}>🔒</div>
+          <p style={{color:'#c2c9d2',fontSize:15,lineHeight:1.5,margin:'0 0 18px'}}>
+            Tu usuario todavía no tiene acceso a Control de Stock.<br/>
+            Pedile a un administrador que te lo habilite.</p>
+          <button className="btn-primary" onClick={()=>sb.auth.signOut()}>Cerrar sesión</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ====== SHELL ====== */
+function Shell({perfil,user}){
+  const isAdmin = perfil.rol_stock==='admin';
+  const [tab,setTab]=useState('catalogo');
+  const [toast,setToast]=useState('');
+  const showToast=m=>{setToast(m);setTimeout(()=>setToast(''),2200);};
+  const nombre=(perfil.nombre||user.email||'').split(' ')[0];
+  return (
+    <div>
+      <div className="topbar">
+        <div className="brand">Tabia'S <span>Stock</span></div>
+        <div className="who">
+          <div className="nm">{nombre}<small>{rolLabel(perfil.rol_stock)}</small></div>
+          <button className="icon-btn" title="Cerrar sesión" onClick={()=>sb.auth.signOut()}>⏻</button>
+        </div>
+      </div>
+      <div className="nav">
+        <button className={tab==='catalogo'?'active':''} onClick={()=>setTab('catalogo')}>Catálogo</button>
+        {isAdmin&&<button className={tab==='usuarios'?'active':''} onClick={()=>setTab('usuarios')}>Usuarios</button>}
+      </div>
+      {tab==='catalogo'&&<Catalogo perfil={perfil} showToast={showToast}/>}
+      {tab==='usuarios'&&isAdmin&&<Usuarios showToast={showToast}/>}
+      {toast&&<div className="toast">{toast}</div>}
+    </div>
+  );
+}
+const rolLabel=r=>({admin:'Administrador',jefe_area:'Jefe de área',operador:'Operador'}[r]||'Stock');
+
+/* ====== CATALOGO ====== */
+function Catalogo({perfil,showToast}){
+  const canEdit = perfil.rol_stock==='admin'||perfil.rol_stock==='jefe_area';
+  const [areas,setAreas]=useState([]);
+  const [search,setSearch]=useState('');
+  const [debounced,setDebounced]=useState('');
+  const [areaFilter,setAreaFilter]=useState(null);
+  const [page,setPage]=useState(0);
+  const [rows,setRows]=useState([]);
+  const [count,setCount]=useState(0);
+  const [loading,setLoading]=useState(true);
+  const [sel,setSel]=useState(null);
+
+  useEffect(()=>{ sb.from('stock_areas').select('*').order('orden').then(({data})=>setAreas(data||[])); },[]);
+  useEffect(()=>{ const t=setTimeout(()=>{setDebounced(search);setPage(0);},300); return ()=>clearTimeout(t); },[search]);
+
+  const load=useCallback(async()=>{
+    setLoading(true);
+    let q=sb.from('vw_stock_productos').select('*',{count:'exact'});
+    if(debounced) q=q.or(`nombre.ilike.%${debounced}%,codigo_granel.ilike.%${debounced}%`);
+    if(areaFilter) q=q.eq('area_id',areaFilter);
+    q=q.order('area_orden',{nullsFirst:false}).order('nombre').range(page*PAGE_SIZE,page*PAGE_SIZE+PAGE_SIZE-1);
+    const {data,count}=await q;
+    setRows(data||[]); setCount(count||0); setLoading(false);
+  },[debounced,areaFilter,page]);
+  useEffect(()=>{ load(); },[load]);
+
+  const totalPages=Math.max(1,Math.ceil(count/PAGE_SIZE));
+  const onSaved=(updated)=>{ setRows(rs=>rs.map(r=>r.id===updated.id?{...r,...updated}:r)); setSel(null); showToast('Cambios guardados'); };
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <h1>Catálogo</h1>
+        <div className="count">{count.toLocaleString('es-AR')} productos</div>
+      </div>
+      <div className="search">
+        <span className="mag">⌕</span>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre o código…"/>
+      </div>
+      <div className="chips">
+        <button className={'chip all'+(areaFilter===null?' active':'')} onClick={()=>{setAreaFilter(null);setPage(0);}}>Todas</button>
+        {areas.map(a=>(
+          <button key={a.id} className={'chip'+(areaFilter===a.id?' active':'')}
+            onClick={()=>{setAreaFilter(a.id);setPage(0);}}>
+            <span className="dot" style={{background:areaColor(a.nombre)}}/>{a.nombre}</button>
+        ))}
+      </div>
+
+      {loading? <div className="spinner"/> :
+       rows.length===0? <div className="empty"><div className="big">⌕</div>No hay productos que coincidan.</div> :
+       <div className="list">{rows.map(p=><ProductCard key={p.id} p={p} onClick={()=>setSel(p)}/>)}</div>}
+
+      {!loading&&count>PAGE_SIZE&&
+        <div className="pager">
+          <button disabled={page===0} onClick={()=>{setPage(p=>p-1);window.scrollTo(0,0);}}>← Anterior</button>
+          <span className="info">Página {page+1} de {totalPages}</span>
+          <button disabled={page+1>=totalPages} onClick={()=>{setPage(p=>p+1);window.scrollTo(0,0);}}>Siguiente →</button>
+        </div>}
+
+      {sel&&<ProductModal p={sel} areas={areas} canEdit={canEdit} onClose={()=>setSel(null)} onSaved={onSaved}/>}
+    </div>
+  );
+}
+
+function ProductCard({p,onClick}){
+  const ser=p.tipo_control==='serializado';
+  const cant=ser?p.unidades_count:p.cantidad_total;
+  return (
+    <div className="pcard" onClick={onClick}>
+      <div className="bar" style={{background:areaColor(p.area_nombre)}}/>
+      <div className="thumb">{p.imagen_url?<img src={p.imagen_url} alt=""/>:<span style={{fontSize:22}}>📦</span>}</div>
+      <div className="body">
+        <div className="nm">{p.nombre}</div>
+        <div className="meta">
+          <span className="tag area"><span className="dot" style={{background:areaColor(p.area_nombre)}}/>{p.area_nombre||'—'}</span>
+          <span className={'tag '+(ser?'tipo-ser':'tipo-gra')}>{ser?'Serializado':'Granel'}</span>
+          {p.es_kit&&<span className="tag kit">Kit</span>}
+        </div>
+      </div>
+      <div className="right">
+        <div className="qty mono">{cant}<small> u.</small></div>
+        {!ser&&p.codigo_granel&&<div className="cod">{p.codigo_granel}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ====== PRODUCT MODAL ====== */
+function ProductModal({p,areas,canEdit,onClose,onSaved}){
+  const ser=p.tipo_control==='serializado';
+  const [nombre,setNombre]=useState(p.nombre||'');
+  const [areaId,setAreaId]=useState(p.area_id||'');
+  const [cantidad,setCantidad]=useState(p.cantidad_total||0);
+  const [img,setImg]=useState(p.imagen_url||'');
+  const [units,setUnits]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [uploading,setUploading]=useState(false);
+
+  useEffect(()=>{
+    if(ser) sb.from('stock_unidades').select('codigo,nro_serie_fabricante,estado')
+      .eq('producto_id',p.id).order('codigo').then(({data})=>setUnits(data||[]));
+  },[]);
+
+  const upload=async(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    setUploading(true);
+    const ext=(file.name.split('.').pop()||'jpg').toLowerCase();
+    const path=`${p.id}.${ext}`;
+    const {error}=await sb.storage.from('productos').upload(path,file,{upsert:true,cacheControl:'3600'});
+    if(error){ setUploading(false); alert('No se pudo subir la imagen.'); return; }
+    const {data}=sb.storage.from('productos').getPublicUrl(path);
+    setImg(data.publicUrl+'?t='+Date.now());
+    setUploading(false);
+  };
+
+  const save=async()=>{
+    setSaving(true);
+    const patch={nombre,area_id:areaId||null,imagen_url:img||null};
+    if(!ser) patch.cantidad_total=Number(cantidad)||0;
+    const {error}=await sb.from('stock_productos').update(patch).eq('id',p.id);
+    setSaving(false);
+    if(error){ alert('No se pudo guardar.'); return; }
+    const area=areas.find(a=>a.id===areaId);
+    onSaved({...p,...patch,area_nombre:area?area.nombre:p.area_nombre,area_orden:area?area.orden:p.area_orden});
+  };
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={e=>e.stopPropagation()}>
+        <div className="sheet-head">
+          <div className="t">{ser?'Producto serializado':'Producto a granel'}</div>
+          <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={onClose}>✕</button>
+        </div>
+        <div className="sheet-body">
+          <div className="img-block">
+            {img?<img src={img} alt=""/>:<span style={{fontSize:40}}>📦</span>}
+            {canEdit&&<label className="img-upload">{uploading?'Subiendo…':'📷 Foto'}
+              <input type="file" accept="image/*" onChange={upload} disabled={uploading}/></label>}
+          </div>
+
+          <div className="frow"><label>Nombre</label>
+            <input type="text" value={nombre} disabled={!canEdit} onChange={e=>setNombre(e.target.value)}/></div>
+
+          <div className="grid2">
+            <div className="frow"><label>Área</label>
+              {canEdit?
+                <select value={areaId} onChange={e=>setAreaId(e.target.value)}>
+                  <option value="">— Sin área —</option>
+                  {areas.map(a=><option key={a.id} value={a.id}>{a.nombre}</option>)}
+                </select>
+                :<div className="ro">{p.area_nombre||'—'}</div>}
+            </div>
+            <div className="frow"><label>Tipo</label>
+              <div className="ro">{ser?'Serializado':'Granel'}{p.es_kit?' · Kit':''}</div></div>
+          </div>
+
+          {!ser?
+            <div className="grid2">
+              <div className="frow"><label>Cantidad</label>
+                <input type="number" min="0" value={cantidad} disabled={!canEdit}
+                  onChange={e=>setCantidad(e.target.value)}/></div>
+              <div className="frow"><label>Código</label>
+                <div className="ro mono">{p.codigo_granel||'—'}</div></div>
+            </div>
+            :
+            <div className="frow"><label>Unidades ({units?units.length:'…'})</label>
+              {units===null?<div style={{color:'#999',fontSize:13,padding:'8px 0'}}>Cargando…</div>:
+               <div className="units">{units.map((u,i)=>(
+                 <div className="u" key={i}>
+                   <span className="c">{u.codigo}</span>
+                   <span className={'est '+u.estado}>{u.estado.replace('_',' ')}</span>
+                 </div>))}</div>}
+            </div>}
+
+          {p.codigo_producto&&<div className="frow"><label>Código Rentman</label>
+            <div className="ro mono">{p.codigo_producto}</div></div>}
+        </div>
+
+        {canEdit&&
+          <div className="save-bar">
+            <button className="btn-ghost" onClick={onClose}>Cancelar</button>
+            <button className="btn-save" disabled={saving} onClick={save}>{saving?'Guardando…':'Guardar cambios'}</button>
+          </div>}
+      </div>
+    </div>
+  );
+}
+
+/* ====== USUARIOS ====== */
+function Usuarios({showToast}){
+  const [rows,setRows]=useState(null);
+  const [savingId,setSavingId]=useState(null);
+  useEffect(()=>{ sb.from('perfiles').select('id,nombre,apellido,rol,puede_stock,rol_stock')
+    .order('nombre').then(({data})=>setRows(data||[])); },[]);
+
+  const upd=(id,patch)=>setRows(rs=>rs.map(r=>r.id===id?{...r,...patch}:r));
+  const save=async(r)=>{
+    setSavingId(r.id);
+    const patch={puede_stock:r.puede_stock,rol_stock:r.puede_stock?(r.rol_stock||'operador'):null};
+    const {error}=await sb.from('perfiles').update(patch).eq('id',r.id);
+    setSavingId(null);
+    if(error){ alert('No se pudo guardar.'); return; }
+    upd(r.id,patch); showToast('Usuario actualizado');
+  };
+
+  if(rows===null) return <div className="page"><div className="spinner"/></div>;
+  return (
+    <div className="page">
+      <div className="page-head"><h1>Usuarios</h1>
+        <div className="count">{rows.length} personas</div></div>
+      <p style={{fontSize:13,color:'var(--muted)',margin:'0 0 16px'}}>
+        Prendé el acceso a Stock y elegí el rol. Entran con su mismo mail y contraseña de Control de Horas.</p>
+      {rows.map(r=>(
+        <div className="ucard" key={r.id}>
+          <div className="ui">
+            <div className="n">{(r.nombre||'')+' '+(r.apellido||'')||'—'}</div>
+            <div className="r">{r.rol||'sin rol'}</div>
+          </div>
+          <div className="ctrls">
+            <label className="switch">
+              <input type="checkbox" checked={!!r.puede_stock}
+                onChange={e=>upd(r.id,{puede_stock:e.target.checked})}/>
+              <span className="slider"></span>
+            </label>
+            <select value={r.rol_stock||'operador'} disabled={!r.puede_stock}
+              onChange={e=>upd(r.id,{rol_stock:e.target.value})}>
+              <option value="operador">Operador</option>
+              <option value="jefe_area">Jefe de área</option>
+              <option value="admin">Administrador</option>
+            </select>
+            <button className="ubtn" disabled={savingId===r.id} onClick={()=>save(r)}>
+              {savingId===r.id?'…':'Guardar'}</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+<script>
+/* Espera a que carguen React, ReactDOM, Babel y Supabase; recién ahí compila (modo classic) y arranca */
+(function(){
+  function listo(){ return window.React && window.ReactDOM && window.Babel && window.supabase; }
+  function err(m){ var r=document.getElementById('root'); if(r){ r.style.background='#fff';
+    r.innerHTML='<div style="padding:30px;font-family:system-ui;color:#b00"><h3>Se produjo un error al iniciar</h3><pre style="white-space:pre-wrap;font-size:13px">'+m+'</pre></div>'; } }
+  var intentos=0;
+  (function arrancar(){
+    if(!listo()){
+      if(intentos++ < 120){ return setTimeout(arrancar,50); }
+      var falta=[];
+      if(!window.React)falta.push('React'); if(!window.ReactDOM)falta.push('ReactDOM');
+      if(!window.Babel)falta.push('Babel'); if(!window.supabase)falta.push('Supabase');
+      return err('No se cargaron a tiempo: '+falta.join(', ')+'.\nEn la vista previa del chat a veces pasa; al subirla a una URL real (Vercel/Netlify) carga bien.');
+    }
+    try{
+      var src=document.getElementById('appsrc').textContent;
+      var out=Babel.transform(src,{presets:[['react',{runtime:'classic'}]]}).code;
+      var s=document.createElement('script'); s.textContent=out; document.body.appendChild(s);
+    }catch(e){ err((e&&e.message)?e.message:String(e)); }
+  })();
+})();
+</script>
+</body>
+</html>
