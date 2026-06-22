@@ -194,6 +194,38 @@
     border-radius:50%;animation:spin .8s linear infinite;margin:50px auto}
   @keyframes spin{to{transform:rotate(360deg)}}
   .center-load{display:grid;place-items:center;min-height:60vh}
+
+  /* ---------- GESTIÓN: unidades / historial / archivar ---------- */
+  .u-row{border-bottom:1px solid var(--line)}
+  .u-row:last-child{border-bottom:none}
+  .u-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer;font-size:13px}
+  .u-head .c{font-family:ui-monospace,monospace;font-weight:600}
+  .u-edit{padding:12px;background:#FAFBFC;border-top:1px dashed var(--line)}
+  .u-actions{display:flex;gap:8px;margin-top:2px}
+  .u-actions .btn-save{flex:1;padding:11px}
+  .btn-danger{padding:11px 14px;border-radius:10px;background:#FDECEC;color:var(--danger);font-weight:700;font-size:14px}
+  .btn-danger:hover{background:#f7d9d9}
+  .btn-danger:disabled{opacity:.55}
+  .hist{margin-top:12px}
+  .hist-t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:4px}
+  .hist-i{display:flex;gap:10px;font-size:12.5px;padding:5px 0;border-top:1px solid var(--line)}
+  .hist-i .d{color:var(--muted);font-variant-numeric:tabular-nums;flex:0 0 62px}
+  .hist-empty{font-size:12.5px;color:var(--muted);padding:4px 0}
+  .addunit{margin-top:10px;padding:12px;border:1px solid var(--teal);border-radius:11px;background:var(--teal-soft)}
+  .addunit .row{display:flex;gap:8px}
+  .addunit input{flex:1;min-width:0;padding:10px 12px;border-radius:9px;border:1px solid var(--line);font-size:14px;background:#fff}
+  .add-btn{width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px dashed #b9c0ca;background:#fff;
+    color:var(--teal-dark);font-weight:700;font-size:14px}
+  .add-btn:hover{border-color:var(--teal);background:var(--teal-soft)}
+  .tipo-line{display:flex;align-items:center;gap:10px}
+  .tipo-line .ro{flex:0 0 auto}
+  .link-btn{font-size:12.5px;font-weight:700;color:var(--teal-dark);background:none;padding:0;text-decoration:underline}
+  .link-btn:disabled{opacity:.5}
+  .danger-zone{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+  .arch-banner{background:#FFF4E5;border:1px solid #f0d9a8;color:#8a5a12;padding:10px 12px;border-radius:10px;
+    font-size:13px;margin-bottom:14px}
+  .arch-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;cursor:pointer}
+  .arch-toggle input{width:16px;height:16px}
 </style>
 </head>
 <body>
@@ -340,6 +372,7 @@ function Catalogo({perfil,showToast}){
   const [count,setCount]=useState(0);
   const [loading,setLoading]=useState(true);
   const [sel,setSel]=useState(null);
+  const [verArchivados,setVerArchivados]=useState(false);
 
   useEffect(()=>{ sb.from('stock_areas').select('*').order('orden').then(({data})=>setAreas(data||[])); },[]);
   useEffect(()=>{ const t=setTimeout(()=>{setDebounced(search);setPage(0);},300); return ()=>clearTimeout(t); },[search]);
@@ -349,14 +382,15 @@ function Catalogo({perfil,showToast}){
     let q=sb.from('vw_stock_productos').select('*',{count:'exact'});
     if(debounced) q=q.or(`nombre.ilike.%${debounced}%,codigo_granel.ilike.%${debounced}%`);
     if(areaFilter) q=q.eq('area_id',areaFilter);
+    q=q.eq('archivado',verArchivados);
     q=q.order('area_orden',{nullsFirst:false}).order('nombre').range(page*PAGE_SIZE,page*PAGE_SIZE+PAGE_SIZE-1);
     const {data,count}=await q;
     setRows(data||[]); setCount(count||0); setLoading(false);
-  },[debounced,areaFilter,page]);
+  },[debounced,areaFilter,page,verArchivados]);
   useEffect(()=>{ load(); },[load]);
 
   const totalPages=Math.max(1,Math.ceil(count/PAGE_SIZE));
-  const onSaved=(updated)=>{ setRows(rs=>rs.map(r=>r.id===updated.id?{...r,...updated}:r)); setSel(null); showToast('Cambios guardados'); };
+  const closeModal=(changed)=>{ setSel(null); if(changed){ load(); showToast('Cambios guardados'); } };
 
   return (
     <div className="page">
@@ -377,6 +411,12 @@ function Catalogo({perfil,showToast}){
         ))}
       </div>
 
+      {canEdit&&
+        <label className="arch-toggle">
+          <input type="checkbox" checked={verArchivados} onChange={e=>{setVerArchivados(e.target.checked);setPage(0);}}/>
+          Ver archivados
+        </label>}
+
       {loading? <div className="spinner"/> :
        rows.length===0? <div className="empty"><div className="big">⌕</div>No hay productos que coincidan.</div> :
        <div className="list">{rows.map(p=><ProductCard key={p.id} p={p} onClick={()=>setSel(p)}/>)}</div>}
@@ -388,7 +428,7 @@ function Catalogo({perfil,showToast}){
           <button disabled={page+1>=totalPages} onClick={()=>{setPage(p=>p+1);window.scrollTo(0,0);}}>Siguiente →</button>
         </div>}
 
-      {sel&&<ProductModal p={sel} areas={areas} canEdit={canEdit} onClose={()=>setSel(null)} onSaved={onSaved}/>}
+      {sel&&<ProductModal p={sel} areas={areas} canEdit={canEdit} isAdmin={perfil.rol_stock==='admin'} onClose={closeModal}/>}
     </div>
   );
 }
@@ -416,9 +456,110 @@ function ProductCard({p,onClick}){
   );
 }
 
+/* ====== helpers de stock ====== */
+const ESTADOS=['disponible','en_evento','en_reparacion','baja','perdido'];
+const estLabel=e=>({disponible:'Disponible',en_evento:'En evento',en_reparacion:'En reparación',baja:'Baja',perdido:'Perdido'}[e]||e);
+const fechaCorta=s=>{ try{ return new Date(s).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}); }catch(e){ return ''; } };
+function nextCode(units){
+  const parsed=units.map(u=>String(u.codigo||'').match(/^(.*?)(\d+)$/)).filter(Boolean);
+  if(!parsed.length) return '';
+  const byPre={};
+  parsed.forEach(m=>{ (byPre[m[1]]=byPre[m[1]]||[]).push(m); });
+  let best=null;
+  Object.keys(byPre).forEach(k=>{ if(!best||byPre[k].length>best.length) best=byPre[k]; });
+  let maxNum=-1,width=1;
+  best.forEach(m=>{ const n=Number(m[2]); if(n>maxNum){ maxNum=n; width=m[2].length; } });
+  return best[0][1]+String(maxNum+1).padStart(width,'0');
+}
+
+function HistList({hist}){
+  if(hist===null) return <div className="hist-empty">…</div>;
+  if(!hist.length) return <div className="hist-empty">Sin movimientos.</div>;
+  return <div>{hist.map((h,i)=>(
+    <div className="hist-i" key={i}><span className="d">{fechaCorta(h.creado_en)}</span><span>{h.detalle||h.accion}</span></div>
+  ))}</div>;
+}
+
+/* ====== FILA DE UNIDAD ====== */
+function UnitRow({u,canEdit,logHist,onChanged}){
+  const [open,setOpen]=useState(false);
+  const [codigo,setCodigo]=useState(u.codigo||'');
+  const [estado,setEstado]=useState(u.estado||'disponible');
+  const [obs,setObs]=useState('');
+  const [hist,setHist]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const loadHist=()=>sb.from('stock_historial').select('accion,detalle,creado_en')
+    .eq('unidad_id',u.id).order('creado_en',{ascending:false}).limit(20).then(({data})=>setHist(data||[]));
+  const toggle=()=>{ const n=!open; setOpen(n); if(n&&hist===null) loadHist(); };
+  const guardar=async()=>{
+    setBusy(true);
+    const patch={}; const cambios=[];
+    if(codigo.trim()&&codigo.trim()!==u.codigo){ patch.codigo=codigo.trim(); cambios.push('Código → '+codigo.trim()); }
+    if(estado!==u.estado){ patch.estado=estado; cambios.push('Estado → '+estLabel(estado)); }
+    if(obs.trim()) patch.observacion=obs.trim();
+    if(!Object.keys(patch).length){ setBusy(false); setOpen(false); return; }
+    const {error}=await sb.from('stock_unidades').update(patch).eq('id',u.id);
+    if(error){ setBusy(false); alert('No se pudo guardar la unidad. Puede que ese código ya exista.'); return; }
+    let det=cambios.join(' · '); if(obs.trim()) det=(det?det+' · ':'')+'Obs: '+obs.trim();
+    if(det) await logHist({unidad_id:u.id,accion:'edicion_unidad',detalle:det});
+    setBusy(false); onChanged();
+  };
+  const quitar=async()=>{
+    if(!confirm('¿Quitar esta unidad del inventario? Queda archivada y se puede recuperar.')) return;
+    setBusy(true);
+    const {error}=await sb.from('stock_unidades').update({activo:false}).eq('id',u.id);
+    if(error){ setBusy(false); alert('No se pudo quitar la unidad.'); return; }
+    await logHist({unidad_id:u.id,accion:'baja_unidad',detalle:'Quitada del inventario'});
+    setBusy(false); onChanged();
+  };
+  return (
+    <div className="u-row">
+      <div className="u-head" onClick={toggle}>
+        <span className="c">{u.codigo}</span>
+        <span className={'est '+u.estado}>{estLabel(u.estado)}</span>
+      </div>
+      {open&&
+        <div className="u-edit">
+          {canEdit&&
+            <div>
+              <div className="frow"><label>Código / Nº de serie</label>
+                <input type="text" value={codigo} onChange={e=>setCodigo(e.target.value)}/></div>
+              <div className="frow"><label>Estado</label>
+                <select value={estado} onChange={e=>setEstado(e.target.value)}>
+                  {ESTADOS.map(s=><option key={s} value={s}>{estLabel(s)}</option>)}
+                </select></div>
+              <div className="frow"><label>Observación (queda en el historial con fecha)</label>
+                <input type="text" value={obs} onChange={e=>setObs(e.target.value)} placeholder="Ej: mandado a reparar a…"/></div>
+              <div className="u-actions">
+                <button className="btn-danger" disabled={busy} onClick={quitar}>Quitar</button>
+                <button className="btn-save" disabled={busy} onClick={guardar}>{busy?'…':'Guardar unidad'}</button>
+              </div>
+            </div>}
+          <div className="hist"><div className="hist-t">Historial</div><HistList hist={hist}/></div>
+        </div>}
+    </div>
+  );
+}
+
+/* ====== MOVIMIENTOS DEL PRODUCTO ====== */
+function ProdHistory({productId}){
+  const [open,setOpen]=useState(false);
+  const [hist,setHist]=useState(null);
+  const toggle=()=>{ const n=!open; setOpen(n);
+    if(n&&hist===null) sb.from('stock_historial').select('accion,detalle,creado_en')
+      .eq('producto_id',productId).order('creado_en',{ascending:false}).limit(30).then(({data})=>setHist(data||[])); };
+  return (
+    <div className="frow" style={{marginTop:6}}>
+      <button className="link-btn" onClick={toggle}>{open?'Ocultar movimientos':'Ver movimientos del producto'}</button>
+      {open&&<div className="hist" style={{marginTop:8}}><HistList hist={hist}/></div>}
+    </div>
+  );
+}
+
 /* ====== PRODUCT MODAL ====== */
-function ProductModal({p,areas,canEdit,onClose,onSaved}){
-  const ser=p.tipo_control==='serializado';
+function ProductModal({p,areas,canEdit,isAdmin,onClose}){
+  const [tipo,setTipo]=useState(p.tipo_control);
+  const ser=tipo==='serializado';
   const [nombre,setNombre]=useState(p.nombre||'');
   const [areaId,setAreaId]=useState(p.area_id||'');
   const [cantidad,setCantidad]=useState(p.cantidad_total||0);
@@ -426,11 +567,32 @@ function ProductModal({p,areas,canEdit,onClose,onSaved}){
   const [units,setUnits]=useState(null);
   const [saving,setSaving]=useState(false);
   const [uploading,setUploading]=useState(false);
+  const [userId,setUserId]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const [newCode,setNewCode]=useState('');
+  const [newSerie,setNewSerie]=useState('');
+  const [busyTipo,setBusyTipo]=useState(false);
+  const changed=useRef(false);
+  const empresaId=p.empresa_id;
+  const archivado=p.archivado;
 
-  useEffect(()=>{
-    if(ser) sb.from('stock_unidades').select('codigo,nro_serie_fabricante,estado')
-      .eq('producto_id',p.id).order('codigo').then(({data})=>setUnits(data||[]));
-  },[]);
+  const reloadUnits=useCallback(()=>{
+    sb.from('stock_unidades').select('id,codigo,nro_serie_fabricante,estado,observacion')
+      .eq('producto_id',p.id).eq('activo',true).order('codigo').then(({data})=>setUnits(data||[]));
+  },[p.id]);
+
+  useEffect(()=>{ sb.auth.getUser().then(({data})=>setUserId(data.user?data.user.id:null)); },[]);
+  useEffect(()=>{ if(ser) reloadUnits(); },[ser,reloadUnits]);
+
+  const logHist=useCallback(async(o)=>{
+    await sb.from('stock_historial').insert({
+      empresa_id:empresaId, unidad_id:o.unidad_id||null,
+      producto_id:o.producto_id||(o.unidad_id?null:p.id),
+      accion:o.accion, detalle:o.detalle||null, usuario_id:userId });
+  },[empresaId,userId,p.id]);
+
+  const mark=()=>{ changed.current=true; };
+  const close=()=>onClose(changed.current);
 
   const upload=async(e)=>{
     const file=e.target.files[0]; if(!file) return;
@@ -440,29 +602,76 @@ function ProductModal({p,areas,canEdit,onClose,onSaved}){
     const {error}=await sb.storage.from('productos').upload(path,file,{upsert:true,cacheControl:'3600'});
     if(error){ setUploading(false); alert('No se pudo subir la imagen.'); return; }
     const {data}=sb.storage.from('productos').getPublicUrl(path);
-    setImg(data.publicUrl+'?t='+Date.now());
-    setUploading(false);
+    setImg(data.publicUrl+'?t='+Date.now()); setUploading(false);
   };
 
-  const save=async()=>{
+  const guardarBasicos=async()=>{
     setSaving(true);
     const patch={nombre,area_id:areaId||null,imagen_url:img||null};
     if(!ser) patch.cantidad_total=Number(cantidad)||0;
     const {error}=await sb.from('stock_productos').update(patch).eq('id',p.id);
-    setSaving(false);
-    if(error){ alert('No se pudo guardar.'); return; }
-    const area=areas.find(a=>a.id===areaId);
-    onSaved({...p,...patch,area_nombre:area?area.nombre:p.area_nombre,area_orden:area?area.orden:p.area_orden});
+    if(error){ setSaving(false); alert('No se pudo guardar.'); return; }
+    if(!ser && (Number(cantidad)||0)!==(p.cantidad_total||0))
+      await logHist({producto_id:p.id,accion:'cambio_cantidad',detalle:'Cantidad → '+(Number(cantidad)||0)});
+    setSaving(false); mark(); onClose(true);
+  };
+
+  const addUnit=async()=>{
+    if(!newCode.trim()){ alert('Escribí (o escaneá) el código.'); return; }
+    setSaving(true);
+    const {error}=await sb.from('stock_unidades').insert({
+      empresa_id:empresaId, producto_id:p.id, codigo:newCode.trim(),
+      nro_serie_fabricante:newSerie.trim()||null, estado:'disponible', activo:true });
+    if(error){ setSaving(false); alert('No se pudo agregar. Puede que ese código ya exista.'); return; }
+    await logHist({producto_id:p.id,accion:'alta_unidad',detalle:'Alta de unidad '+newCode.trim()});
+    setSaving(false); mark(); setNewCode(''); setNewSerie(''); reloadUnits();
+  };
+
+  const pasarAGranel=async()=>{
+    const n=(units||[]).length;
+    if(!confirm('Pasar a GRANEL: se archivan los '+n+' códigos individuales (se pueden recuperar) y queda solo la cantidad ('+n+'). ¿Seguir?')) return;
+    setBusyTipo(true);
+    await sb.from('stock_unidades').update({activo:false}).eq('producto_id',p.id).eq('activo',true);
+    const {error}=await sb.from('stock_productos').update({tipo_control:'cantidad',cantidad_total:n}).eq('id',p.id);
+    if(error){ setBusyTipo(false); alert('No se pudo cambiar el tipo.'); return; }
+    await logHist({producto_id:p.id,accion:'cambio_tipo',detalle:'Serializado → Granel ('+n+' u.)'});
+    setBusyTipo(false); mark(); setTipo('cantidad'); setCantidad(n);
+  };
+  const pasarASerial=async()=>{
+    if(!confirm('Pasar a SERIALIZADO: vas a cargar el código de cada aparato (uno por uno o escaneando). ¿Seguir?')) return;
+    setBusyTipo(true);
+    const {error}=await sb.from('stock_productos').update({tipo_control:'serializado'}).eq('id',p.id);
+    if(error){ setBusyTipo(false); alert('No se pudo cambiar el tipo.'); return; }
+    await logHist({producto_id:p.id,accion:'cambio_tipo',detalle:'Granel → Serializado'});
+    setBusyTipo(false); mark(); setTipo('serializado'); setNewCode(''); setAdding(true);
+  };
+
+  const archivar=async()=>{
+    const motivo=prompt('¿Por qué lo archivás? (desuso, pérdida, etc.) — opcional, podés dejar vacío');
+    if(motivo===null) return;
+    setSaving(true);
+    const {error}=await sb.from('stock_productos').update({archivado:true,archivado_en:new Date().toISOString(),archivado_motivo:motivo||null}).eq('id',p.id);
+    if(error){ setSaving(false); alert('No se pudo archivar.'); return; }
+    await logHist({producto_id:p.id,accion:'archivado',detalle:'Archivado'+(motivo?': '+motivo:'')});
+    setSaving(false); mark(); onClose(true);
+  };
+  const restaurar=async()=>{
+    setSaving(true);
+    const {error}=await sb.from('stock_productos').update({archivado:false,archivado_en:null,archivado_motivo:null}).eq('id',p.id);
+    if(error){ setSaving(false); alert('No se pudo restaurar.'); return; }
+    await logHist({producto_id:p.id,accion:'restaurado',detalle:'Restaurado'});
+    setSaving(false); mark(); onClose(true);
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={close}>
       <div className="sheet" onClick={e=>e.stopPropagation()}>
         <div className="sheet-head">
           <div className="t">{ser?'Producto serializado':'Producto a granel'}</div>
-          <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={onClose}>✕</button>
+          <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={close}>✕</button>
         </div>
         <div className="sheet-body">
+          {archivado&&<div className="arch-banner">📦 Este producto está <b>archivado</b>. Restauralo para volver a usarlo.</div>}
           <div className="img-block">
             {img?<img src={img} alt=""/>:<span style={{fontSize:40}}>📦</span>}
             {canEdit&&<label className="img-upload">{uploading?'Subiendo…':'📷 Foto'}
@@ -482,7 +691,13 @@ function ProductModal({p,areas,canEdit,onClose,onSaved}){
                 :<div className="ro">{p.area_nombre||'—'}</div>}
             </div>
             <div className="frow"><label>Tipo</label>
-              <div className="ro">{ser?'Serializado':'Granel'}{p.es_kit?' · Kit':''}</div></div>
+              <div className="tipo-line">
+                <div className="ro">{ser?'Serializado':'Granel'}{p.es_kit?' · Kit':''}</div>
+                {canEdit&&(ser?
+                  <button className="link-btn" disabled={busyTipo} onClick={pasarAGranel}>→ a granel</button>
+                  :<button className="link-btn" disabled={busyTipo} onClick={pasarASerial}>→ a serializado</button>)}
+              </div>
+            </div>
           </div>
 
           {!ser?
@@ -496,21 +711,41 @@ function ProductModal({p,areas,canEdit,onClose,onSaved}){
             :
             <div className="frow"><label>Unidades ({units?units.length:'…'})</label>
               {units===null?<div style={{color:'#999',fontSize:13,padding:'8px 0'}}>Cargando…</div>:
-               <div className="units">{units.map((u,i)=>(
-                 <div className="u" key={i}>
-                   <span className="c">{u.codigo}</span>
-                   <span className={'est '+u.estado}>{u.estado.replace('_',' ')}</span>
-                 </div>))}</div>}
+               <div className="units">{units.length===0?
+                  <div style={{padding:'10px 12px',fontSize:13,color:'var(--muted)'}}>Todavía no hay unidades cargadas.</div>:
+                  units.map(u=><UnitRow key={u.id} u={u} canEdit={canEdit} logHist={logHist} onChanged={()=>{mark();reloadUnits();}}/>)}
+               </div>}
+              {canEdit&&(adding?
+                <div className="addunit">
+                  <div className="row">
+                    <input type="text" value={newCode} onChange={e=>setNewCode(e.target.value)} placeholder="Código / escaneo"/>
+                    <input type="text" value={newSerie} onChange={e=>setNewSerie(e.target.value)} placeholder="Nº serie (opc.)"/>
+                  </div>
+                  <div className="u-actions" style={{marginTop:8}}>
+                    <button className="btn-ghost" onClick={()=>{setAdding(false);setNewCode('');setNewSerie('');}}>Cancelar</button>
+                    <button className="btn-save" disabled={saving} onClick={addUnit}>{saving?'…':'Agregar unidad'}</button>
+                  </div>
+                </div>
+                :<button className="add-btn" onClick={()=>{setNewCode(nextCode(units||[]));setAdding(true);}}>+ Agregar unidad</button>)}
             </div>}
 
           {p.codigo_producto&&<div className="frow"><label>Código Rentman</label>
             <div className="ro mono">{p.codigo_producto}</div></div>}
+
+          {!ser&&<ProdHistory productId={p.id}/>}
+
+          {canEdit&&
+            <div className="danger-zone">
+              {archivado?
+                <button className="btn-save" disabled={saving} onClick={restaurar} style={{flex:1}}>Restaurar producto</button>
+                :<button className="btn-danger" disabled={saving} onClick={archivar} style={{flex:1}}>Archivar producto</button>}
+            </div>}
         </div>
 
-        {canEdit&&
+        {canEdit&&!archivado&&
           <div className="save-bar">
-            <button className="btn-ghost" onClick={onClose}>Cancelar</button>
-            <button className="btn-save" disabled={saving} onClick={save}>{saving?'Guardando…':'Guardar cambios'}</button>
+            <button className="btn-ghost" onClick={close}>Cerrar</button>
+            <button className="btn-save" disabled={saving} onClick={guardarBasicos}>{saving?'Guardando…':'Guardar cambios'}</button>
           </div>}
       </div>
     </div>
