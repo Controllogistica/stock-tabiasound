@@ -259,6 +259,10 @@
   .lin-badge.ok{font-size:11px;font-weight:700;color:#1f8a4c;background:#EAF7EE;padding:5px 10px;border-radius:20px;white-space:nowrap}
   .lin-x{font-size:12.5px;font-weight:700;color:var(--danger);background:none}
   .lin-dev{font-size:12.5px;font-weight:700;color:#fff;background:var(--teal);padding:8px 14px;border-radius:9px}
+  .lin-acts{display:flex;gap:8px;align-items:center}
+  .seg{display:flex;gap:4px;background:#EEF1F4;border-radius:10px;padding:4px;margin-bottom:12px}
+  .seg button{flex:1;padding:9px;border-radius:8px;font-size:13px;font-weight:700;color:var(--muted);background:none}
+  .seg button.on{background:#fff;color:#1f2937;box-shadow:0 1px 2px rgba(0,0,0,.08)}
   .det-actions{margin-top:20px}
 </style>
 </head>
@@ -443,6 +447,7 @@ function RemitoDetalle({remito,showToast,onBack}){
   const [code,setCode]=useState('');
   const [busy,setBusy]=useState(false);
   const [userId,setUserId]=useState(null);
+  const [modo,setModo]=useState('agregar');
   const inputRef=useRef(null);
   const armando=r.estado==='pendiente';
   const enEvento=r.estado==='en_evento';
@@ -506,7 +511,7 @@ function RemitoDetalle({remito,showToast,onBack}){
   const onScan=async()=>{
     const c=code.trim(); if(!c||busy) return;
     setBusy(true);
-    try{ if(armando) await scanSalida(c); else if(enEvento) await scanDevolucion(c); }
+    try{ if(modo==='devolver'&&enEvento) await scanDevolucion(c); else await scanSalida(c); }
     catch(e){ alert('Error: '+(e&&e.message?e.message:e)); }
     setBusy(false); setCode(''); refocus();
   };
@@ -522,7 +527,7 @@ function RemitoDetalle({remito,showToast,onBack}){
     if(!lineas||!lineas.length){ alert('Agregá al menos un equipo antes de confirmar la salida.'); return; }
     if(!confirm('¿Confirmar salida del equipo para "'+(r.evento||'remito')+'"?')) return;
     await sb.from('stock_remitos').update({estado:'en_evento'}).eq('id',r.id);
-    setR(prev=>{const n={...prev};n.estado='en_evento';return n;}); if(showToast) showToast('Salida confirmada');
+    setR(prev=>{const n={...prev};n.estado='en_evento';return n;}); setModo('devolver'); if(showToast) showToast('Salida confirmada');
   };
   const cerrarRemito=async()=>{
     const pend=(lineas||[]).filter(l=>!l.devuelto).length;
@@ -543,11 +548,16 @@ function RemitoDetalle({remito,showToast,onBack}){
 
       {(armando||enEvento)&&
         <div className="scan-box">
-          <label>{armando?'Cargar equipo — escaneá con la pistola o escribí el código':'Devolución — escaneá lo que vuelve o escribí el código'}</label>
+          {enEvento&&
+            <div className="seg">
+              <button className={modo==='agregar'?'on':''} onClick={()=>{setModo('agregar');refocus();}}>Agregar equipo</button>
+              <button className={modo==='devolver'?'on':''} onClick={()=>{setModo('devolver');refocus();}}>Devolver</button>
+            </div>}
+          <label>{modo==='devolver'?'Devolución — escaneá lo que vuelve o escribí el código':'Cargar equipo — escaneá con la pistola o escribí el código'}</label>
           <div className="scan-row">
             <input ref={inputRef} value={code} onChange={e=>setCode(e.target.value)}
               onKeyDown={e=>{ if(e.key==='Enter') onScan(); }} placeholder="Código…" autoFocus/>
-            <button className="btn-save" disabled={busy} onClick={onScan}>{busy?'…':(armando?'Agregar':'Devolver')}</button>
+            <button className="btn-save" disabled={busy} onClick={onScan}>{busy?'…':(modo==='devolver'?'Devolver':'Agregar')}</button>
           </div>
           <div className="scan-hint">📷 El escaneo con cámara llega en la próxima etapa. Por ahora: pistola o a mano.</div>
         </div>}
@@ -564,8 +574,10 @@ function RemitoDetalle({remito,showToast,onBack}){
              </div>
            </div>
            {l.devuelto?<span className="lin-badge ok">Devuelto</span>:
-             armando?<button className="lin-x" onClick={()=>quitarLinea(l)}>Quitar</button>:
-             enEvento?<button className="lin-dev" onClick={()=>devolverLinea(l)}>Devolver</button>:null}
+             <div className="lin-acts">
+               <button className="lin-x" onClick={()=>quitarLinea(l)}>Quitar</button>
+               {enEvento&&<button className="lin-dev" onClick={()=>devolverLinea(l)}>Devolver</button>}
+             </div>}
          </div>))}</div>}
 
       {armando&&<div className="det-actions"><button className="btn-primary wide" onClick={confirmarSalida}>Confirmar salida</button></div>}
