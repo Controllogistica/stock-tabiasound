@@ -205,10 +205,7 @@ window.onerror=function(msg){var r=document.getElementById('root');
   if(r&&r.children.length===0){r.style.background='#fff';
     r.innerHTML='<div style="padding:30px;font-family:system-ui;color:#b00"><h3>Se produjo un error al iniciar</h3><pre style="white-space:pre-wrap;font-size:13px">'+msg+'</pre></div>';}};
 </script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<!-- Las librerías (React, ReactDOM, Babel, Supabase) se cargan dinámicamente más abajo, con CDN de respaldo -->
 
 <script type="text/plain" id="appsrc">
 const { useState, useEffect, useRef, useCallback } = React;
@@ -574,26 +571,43 @@ function Usuarios({showToast}){
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 <script>
-/* Espera a que carguen React, ReactDOM, Babel y Supabase; recién ahí compila (modo classic) y arranca */
+/* Carga React, ReactDOM, Babel y Supabase en orden, cada una con un CDN de respaldo. Recién con todo listo, compila la app (modo classic) y arranca. */
 (function(){
-  function listo(){ return window.React && window.ReactDOM && window.Babel && window.supabase; }
-  function err(m){ var r=document.getElementById('root'); if(r){ r.style.background='#fff';
-    r.innerHTML='<div style="padding:30px;font-family:system-ui;color:#b00"><h3>Se produjo un error al iniciar</h3><pre style="white-space:pre-wrap;font-size:13px">'+m+'</pre></div>'; } }
-  var intentos=0;
-  (function arrancar(){
-    if(!listo()){
-      if(intentos++ < 120){ return setTimeout(arrancar,50); }
-      var falta=[];
-      if(!window.React)falta.push('React'); if(!window.ReactDOM)falta.push('ReactDOM');
-      if(!window.Babel)falta.push('Babel'); if(!window.supabase)falta.push('Supabase');
-      return err('No se cargaron a tiempo: '+falta.join(', ')+'.\nEn la vista previa del chat a veces pasa; al subirla a una URL real (Vercel/Netlify) carga bien.');
-    }
+  var root=document.getElementById('root');
+  function showErr(m){ if(root){ root.style.background='#fff';
+    root.innerHTML='<div style="padding:30px;font-family:system-ui;color:#b00"><h3>Se produjo un error al iniciar</h3><pre style="white-space:pre-wrap;font-size:13px">'+m+'</pre></div>'; } }
+  var libs=[
+    {n:'React', g:'React', u:['https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js','https://unpkg.com/react@18.3.1/umd/react.production.min.js']},
+    {n:'ReactDOM', g:'ReactDOM', u:['https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js','https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js']},
+    {n:'Babel', g:'Babel', u:['https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js','https://unpkg.com/@babel/standalone@7.24.7/babel.min.js']},
+    {n:'Supabase', g:'supabase', u:['https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2','https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js']}
+  ];
+  function loadOne(lib,done){
+    var i=0;
+    (function attempt(){
+      if(window[lib.g]) return done(true);
+      if(i>=lib.u.length) return done(false);
+      var s=document.createElement('script');
+      s.src=lib.u[i++];
+      s.onload=function(){ if(window[lib.g]) done(true); else attempt(); };
+      s.onerror=attempt;
+      document.head.appendChild(s);
+    })();
+  }
+  (function chain(k){
+    if(k>=libs.length) return boot();
+    loadOne(libs[k],function(ok){
+      if(!ok) return showErr('No se pudo cargar la librería: '+libs[k].n+'.\nProbá recargar la página; si sigue, puede ser un bloqueador o la conexión.');
+      chain(k+1);
+    });
+  })(0);
+  function boot(){
     try{
       var src=document.getElementById('appsrc').textContent;
       var out=Babel.transform(src,{presets:[['react',{runtime:'classic'}]]}).code;
       var s=document.createElement('script'); s.textContent=out; document.body.appendChild(s);
-    }catch(e){ err((e&&e.message)?e.message:String(e)); }
-  })();
+    }catch(e){ showErr((e&&e.message)?e.message:String(e)); }
+  }
 })();
 </script>
 </body>
