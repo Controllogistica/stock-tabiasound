@@ -226,6 +226,40 @@
     font-size:13px;margin-bottom:14px}
   .arch-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;cursor:pointer}
   .arch-toggle input{width:16px;height:16px}
+
+  /* ---------- REMITOS ---------- */
+  .rwrap{max-width:760px;margin:0 auto;padding:20px 16px 90px}
+  .page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+  .ph-title{font-family:'Oswald',sans-serif;font-size:26px;font-weight:600;margin:0;text-transform:uppercase;letter-spacing:.02em}
+  .btn-primary{background:var(--teal);color:#fff;font-weight:700;padding:11px 18px;border-radius:10px;font-size:14px}
+  .btn-primary:hover{background:var(--teal-dark)}
+  .btn-primary.wide,.btn-ghost.wide{width:100%;padding:14px}
+  .empty{color:var(--muted);font-size:14px;padding:34px 4px;text-align:center}
+  .rem-list{display:flex;flex-direction:column;gap:10px}
+  .rem-card{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px 16px;cursor:pointer}
+  .rem-card:hover{border-color:var(--teal)}
+  .rem-ev{font-weight:700;font-size:15px}
+  .rem-sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .rem-est{font-size:11px;font-weight:700;padding:5px 11px;border-radius:20px;white-space:nowrap}
+  .rem-est.e-pendiente{background:#FFF4E5;color:#8a5a12}
+  .rem-est.e-en_evento{background:#E7F0FF;color:#1d4ed8}
+  .rem-est.e-cerrado{background:#EAF7EE;color:#1f8a4c}
+  .det-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin:12px 0 18px}
+  .scan-box{background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px;margin-bottom:18px}
+  .scan-box>label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px}
+  .scan-row{display:flex;gap:8px}
+  .scan-row input{flex:1;min-width:0;padding:12px 14px;border-radius:10px;border:1px solid var(--line);font-size:15px;font-family:ui-monospace,monospace}
+  .scan-hint{font-size:11.5px;color:var(--muted);margin-top:8px}
+  .lin-head{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:10px}
+  .lin-list{display:flex;flex-direction:column;gap:8px}
+  .lin-row{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 14px}
+  .lin-row.dev{opacity:.55}
+  .lin-nm{font-weight:600;font-size:14px}
+  .lin-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .lin-badge.ok{font-size:11px;font-weight:700;color:#1f8a4c;background:#EAF7EE;padding:5px 10px;border-radius:20px;white-space:nowrap}
+  .lin-x{font-size:12.5px;font-weight:700;color:var(--danger);background:none}
+  .lin-dev{font-size:12.5px;font-weight:700;color:#fff;background:var(--teal);padding:8px 14px;border-radius:9px}
+  .det-actions{margin-top:20px}
 </style>
 </head>
 <body>
@@ -333,6 +367,213 @@ function NoAccess({perfil}){
 }
 
 /* ====== SHELL ====== */
+/* ====== REMITOS ====== */
+const EMPRESA_ID='deb16582-fbad-4b0c-9de9-80c2fd14a609';
+const remEstLabel=e=>({pendiente:'Armando',en_evento:'En evento',cerrado:'Cerrado'}[e]||e);
+const fmtFecha=s=>{ try{ return new Date(String(s).length<=10?s+'T00:00:00':s).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}); }catch(e){ return ''; } };
+const fmtRango=(a,b)=>{ if(!a&&!b) return 'sin fechas'; if(a&&b) return fmtFecha(a)+' → '+fmtFecha(b); return fmtFecha(a||b); };
+
+function Remitos({perfil,showToast}){
+  const [remitos,setRemitos]=useState(null);
+  const [sel,setSel]=useState(null);
+  const [creating,setCreating]=useState(false);
+  const load=()=>sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}).limit(100).then(({data})=>setRemitos(data||[]));
+  useEffect(()=>{ load(); },[]);
+  if(sel) return <RemitoDetalle remito={sel} showToast={showToast} onBack={()=>{setSel(null);load();}}/>;
+  return (
+    <div className="rwrap">
+      <div className="page-head"><h1 className="ph-title">Remitos</h1>
+        <button className="btn-primary" onClick={()=>setCreating(true)}>+ Nuevo</button></div>
+      {remitos===null?<div className="spinner"/>:
+       remitos.length===0?<div className="empty">Todavía no hay remitos. Creá el primero con “+ Nuevo”.</div>:
+       <div className="rem-list">{remitos.map(r=>(
+         <div className="rem-card" key={r.id} onClick={()=>setSel(r)}>
+           <div className="rem-main">
+             <div className="rem-ev">{r.evento||'(sin evento)'}</div>
+             <div className="rem-sub">{r.cliente||'—'} · {fmtRango(r.fecha_desde,r.fecha_hasta)}</div>
+           </div>
+           <span className={'rem-est e-'+r.estado}>{remEstLabel(r.estado)}</span>
+         </div>))}</div>}
+      {creating&&<NuevoRemito onClose={()=>setCreating(false)} onCreated={(r)=>{setCreating(false);load();setSel(r);}}/>}
+    </div>
+  );
+}
+
+function NuevoRemito({onClose,onCreated}){
+  const [f,setF]=useState({evento:'',cliente:'',desde:'',hasta:'',obs:''});
+  const [saving,setSaving]=useState(false);
+  const set=(k,v)=>setF(o=>{const n={...o};n[k]=v;return n;});
+  const crear=async()=>{
+    if(!f.evento.trim()){ alert('Poné al menos el nombre del evento.'); return; }
+    setSaving(true);
+    const {data,error}=await sb.from('stock_remitos').insert({
+      empresa_id:EMPRESA_ID, evento:f.evento.trim(), cliente:f.cliente.trim()||null,
+      fecha_desde:f.desde||null, fecha_hasta:f.hasta||null, observacion:f.obs.trim()||null, estado:'pendiente'
+    }).select().single();
+    setSaving(false);
+    if(error){ alert('No se pudo crear el remito.'); return; }
+    onCreated(data);
+  };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={e=>e.stopPropagation()}>
+        <div className="sheet-head"><div className="t">Nuevo remito</div>
+          <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={onClose}>✕</button></div>
+        <div className="sheet-body">
+          <div className="frow"><label>Evento</label><input value={f.evento} onChange={e=>set('evento',e.target.value)} placeholder="Ej: Show Luna Park"/></div>
+          <div className="frow"><label>Cliente</label><input value={f.cliente} onChange={e=>set('cliente',e.target.value)}/></div>
+          <div className="grid2">
+            <div className="frow"><label>Desde</label><input type="date" value={f.desde} onChange={e=>set('desde',e.target.value)}/></div>
+            <div className="frow"><label>Hasta</label><input type="date" value={f.hasta} onChange={e=>set('hasta',e.target.value)}/></div>
+          </div>
+          <div className="frow"><label>Observación</label><input value={f.obs} onChange={e=>set('obs',e.target.value)}/></div>
+        </div>
+        <div className="save-bar">
+          <button className="btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn-save" disabled={saving} onClick={crear}>{saving?'Creando…':'Crear remito'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RemitoDetalle({remito,showToast,onBack}){
+  const [r,setR]=useState(remito);
+  const [lineas,setLineas]=useState(null);
+  const [code,setCode]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [userId,setUserId]=useState(null);
+  const inputRef=useRef(null);
+  const armando=r.estado==='pendiente';
+  const enEvento=r.estado==='en_evento';
+
+  useEffect(()=>{ sb.auth.getUser().then(({data})=>setUserId(data.user?data.user.id:null)); },[]);
+  const loadLineas=useCallback(async()=>{
+    const {data:ls}=await sb.from('stock_remito_lineas')
+      .select('id,cantidad,devuelto,fecha_salida,fecha_devolucion,unidad_id,producto_id')
+      .eq('remito_id',r.id).order('fecha_salida',{ascending:true,nullsFirst:true});
+    const lns=ls||[];
+    const uids=[...new Set(lns.filter(l=>l.unidad_id).map(l=>l.unidad_id))];
+    const pids=[...new Set(lns.filter(l=>l.producto_id).map(l=>l.producto_id))];
+    const um={},pm={};
+    if(uids.length){ const {data}=await sb.from('stock_unidades').select('id,codigo,estado').in('id',uids); (data||[]).forEach(u=>{um[u.id]=u;}); }
+    if(pids.length){ const {data}=await sb.from('stock_productos').select('id,nombre,codigo_granel').in('id',pids); (data||[]).forEach(p=>{pm[p.id]=p;}); }
+    setLineas(lns.map(l=>{ const o={...l}; o._u=um[l.unidad_id]||null; o._p=pm[l.producto_id]||null; return o; }));
+  },[r.id]);
+  useEffect(()=>{ loadLineas(); },[loadLineas]);
+
+  const logHist=async(o)=>{ await sb.from('stock_historial').insert({empresa_id:EMPRESA_ID,unidad_id:o.unidad_id||null,producto_id:o.producto_id||null,remito_id:r.id,accion:o.accion,detalle:o.detalle||null,usuario_id:userId}); };
+  const refocus=()=>{ if(inputRef.current) inputRef.current.focus(); };
+
+  const scanSalida=async(c)=>{
+    const {data:u}=await sb.from('stock_unidades').select('id,codigo,estado,producto_id,activo').eq('codigo',c).eq('activo',true).maybeSingle();
+    if(u){
+      if(u.estado==='en_evento'){ alert('Esa unidad ya está en un evento.'); return; }
+      await sb.from('stock_remito_lineas').insert({remito_id:r.id,unidad_id:u.id,producto_id:u.producto_id,cantidad:1,fecha_salida:new Date().toISOString()});
+      await sb.from('stock_unidades').update({estado:'en_evento'}).eq('id',u.id);
+      await logHist({unidad_id:u.id,accion:'salida',detalle:'Salida — '+(r.evento||'remito')});
+      loadLineas(); return;
+    }
+    let p=null;
+    const r1=await sb.from('stock_productos').select('id,nombre,codigo_granel,codigo_producto').eq('codigo_granel',c).maybeSingle(); p=r1.data;
+    if(!p){ const r2=await sb.from('stock_productos').select('id,nombre,codigo_granel,codigo_producto').eq('codigo_producto',c).maybeSingle(); p=r2.data; }
+    if(p){
+      const qty=Number(prompt('Cantidad de "'+p.nombre+'" a sacar:','1'))||0;
+      if(qty>0){
+        await sb.from('stock_remito_lineas').insert({remito_id:r.id,producto_id:p.id,cantidad:qty,fecha_salida:new Date().toISOString()});
+        await logHist({producto_id:p.id,accion:'salida',detalle:'Salida x'+qty+' — '+(r.evento||'remito')});
+        loadLineas();
+      }
+      return;
+    }
+    alert('Código no encontrado: '+c);
+  };
+
+  const devolverLinea=async(l)=>{
+    await sb.from('stock_remito_lineas').update({devuelto:true,fecha_devolucion:new Date().toISOString()}).eq('id',l.id);
+    if(l.unidad_id){ await sb.from('stock_unidades').update({estado:'disponible'}).eq('id',l.unidad_id);
+      await logHist({unidad_id:l.unidad_id,accion:'devolucion',detalle:'Devolución — '+(r.evento||'remito')}); }
+    else await logHist({producto_id:l.producto_id,accion:'devolucion',detalle:'Devolución — '+(r.evento||'remito')});
+    loadLineas();
+  };
+  const scanDevolucion=async(c)=>{
+    let l=(lineas||[]).find(x=>x._u&&x._u.codigo===c&&!x.devuelto);
+    if(!l) l=(lineas||[]).find(x=>!x.unidad_id&&x._p&&x._p.codigo_granel===c&&!x.devuelto);
+    if(!l){ alert('Ese código no está pendiente de devolución en este remito.'); return; }
+    await devolverLinea(l);
+  };
+
+  const onScan=async()=>{
+    const c=code.trim(); if(!c||busy) return;
+    setBusy(true);
+    try{ if(armando) await scanSalida(c); else if(enEvento) await scanDevolucion(c); }
+    catch(e){ alert('Error: '+(e&&e.message?e.message:e)); }
+    setBusy(false); setCode(''); refocus();
+  };
+
+  const quitarLinea=async(l)=>{
+    if(!confirm('¿Quitar este ítem del remito?')) return;
+    await sb.from('stock_remito_lineas').delete().eq('id',l.id);
+    if(l.unidad_id) await sb.from('stock_unidades').update({estado:'disponible'}).eq('id',l.unidad_id);
+    loadLineas();
+  };
+
+  const confirmarSalida=async()=>{
+    if(!lineas||!lineas.length){ alert('Agregá al menos un equipo antes de confirmar la salida.'); return; }
+    if(!confirm('¿Confirmar salida del equipo para "'+(r.evento||'remito')+'"?')) return;
+    await sb.from('stock_remitos').update({estado:'en_evento'}).eq('id',r.id);
+    setR(prev=>{const n={...prev};n.estado='en_evento';return n;}); if(showToast) showToast('Salida confirmada');
+  };
+  const cerrarRemito=async()=>{
+    const pend=(lineas||[]).filter(l=>!l.devuelto).length;
+    if(pend>0 && !confirm('Quedan '+pend+' ítems sin devolver. ¿Cerrar igual? Los que no volvieron quedan marcados como en evento.')) return;
+    await sb.from('stock_remitos').update({estado:'cerrado'}).eq('id',r.id);
+    setR(prev=>{const n={...prev};n.estado='cerrado';return n;}); if(showToast) showToast('Remito cerrado');
+  };
+
+  const pendientes=(lineas||[]).filter(l=>!l.devuelto).length;
+  return (
+    <div className="rwrap">
+      <button className="link-btn" onClick={onBack}>‹ Volver a remitos</button>
+      <div className="det-head">
+        <div><div className="rem-ev" style={{fontSize:20}}>{r.evento||'(sin evento)'}</div>
+          <div className="rem-sub">{r.cliente||'—'} · {fmtRango(r.fecha_desde,r.fecha_hasta)}</div></div>
+        <span className={'rem-est e-'+r.estado}>{remEstLabel(r.estado)}</span>
+      </div>
+
+      {(armando||enEvento)&&
+        <div className="scan-box">
+          <label>{armando?'Cargar equipo — escaneá con la pistola o escribí el código':'Devolución — escaneá lo que vuelve o escribí el código'}</label>
+          <div className="scan-row">
+            <input ref={inputRef} value={code} onChange={e=>setCode(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter') onScan(); }} placeholder="Código…" autoFocus/>
+            <button className="btn-save" disabled={busy} onClick={onScan}>{busy?'…':(armando?'Agregar':'Devolver')}</button>
+          </div>
+          <div className="scan-hint">📷 El escaneo con cámara llega en la próxima etapa. Por ahora: pistola o a mano.</div>
+        </div>}
+
+      <div className="lin-head">Ítems ({lineas?lineas.length:'…'}){enEvento&&lineas?' · pendientes de devolver: '+pendientes:''}</div>
+      {lineas===null?<div className="spinner"/>:
+       lineas.length===0?<div className="empty">Sin ítems todavía.</div>:
+       <div className="lin-list">{lineas.map(l=>(
+         <div className={'lin-row'+(l.devuelto?' dev':'')} key={l.id}>
+           <div className="lin-main">
+             <div className="lin-nm">{l._p?l._p.nombre:'(producto)'}</div>
+             <div className="lin-sub">
+               {l.unidad_id?<span className="mono">{l._u?l._u.codigo:'—'}</span>:<span>x{l.cantidad} · {(l._p&&l._p.codigo_granel)||'granel'}</span>}
+             </div>
+           </div>
+           {l.devuelto?<span className="lin-badge ok">Devuelto</span>:
+             armando?<button className="lin-x" onClick={()=>quitarLinea(l)}>Quitar</button>:
+             enEvento?<button className="lin-dev" onClick={()=>devolverLinea(l)}>Devolver</button>:null}
+         </div>))}</div>}
+
+      {armando&&<div className="det-actions"><button className="btn-primary wide" onClick={confirmarSalida}>Confirmar salida</button></div>}
+      {enEvento&&<div className="det-actions"><button className="btn-ghost wide" onClick={cerrarRemito}>Cerrar remito</button></div>}
+    </div>
+  );
+}
+
 function Shell({perfil,user}){
   const isAdmin = perfil.rol_stock==='admin';
   const [tab,setTab]=useState('catalogo');
@@ -350,9 +591,11 @@ function Shell({perfil,user}){
       </div>
       <div className="nav">
         <button className={tab==='catalogo'?'active':''} onClick={()=>setTab('catalogo')}>Catálogo</button>
+        <button className={tab==='remitos'?'active':''} onClick={()=>setTab('remitos')}>Remitos</button>
         {isAdmin&&<button className={tab==='usuarios'?'active':''} onClick={()=>setTab('usuarios')}>Usuarios</button>}
       </div>
       {tab==='catalogo'&&<Catalogo perfil={perfil} showToast={showToast}/>}
+      {tab==='remitos'&&<Remitos perfil={perfil} showToast={showToast}/>}
       {tab==='usuarios'&&isAdmin&&<Usuarios showToast={showToast}/>}
       {toast&&<div className="toast">{toast}</div>}
     </div>
