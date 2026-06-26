@@ -715,6 +715,7 @@ function ProductCard({p,onClick}){
 const ESTADOS=['disponible','en_evento','en_reparacion','baja','perdido'];
 const estLabel=e=>({disponible:'Disponible',en_evento:'En evento',en_reparacion:'En reparación',baja:'Baja',perdido:'Perdido'}[e]||e);
 const fechaCorta=s=>{ try{ return new Date(s).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}); }catch(e){ return ''; } };
+const fmtMoney=n=>{ try{ return Number(n).toLocaleString('es-AR'); }catch(e){ return String(n); } };
 function nextCode(units){
   const parsed=units.map(u=>String(u.codigo||'').match(/^(.*?)(\d+)$/)).filter(Boolean);
   if(!parsed.length) return '';
@@ -819,6 +820,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
   const [areaId,setAreaId]=useState(p.area_id||'');
   const [cantidad,setCantidad]=useState(p.cantidad_total||0);
   const [img,setImg]=useState(p.imagen_url||'');
+  const [precio,setPrecio]=useState(p.precio_alquiler!=null?p.precio_alquiler:'');
   const [units,setUnits]=useState(null);
   const [saving,setSaving]=useState(false);
   const [uploading,setUploading]=useState(false);
@@ -863,6 +865,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
   const guardarBasicos=async()=>{
     setSaving(true);
     const patch={nombre,area_id:areaId||null,imagen_url:img||null};
+    patch.precio_alquiler = (precio===''||precio===null) ? null : Number(precio);
     if(!ser) patch.cantidad_total=Number(cantidad)||0;
     const {error}=await sb.from('stock_productos').update(patch).eq('id',p.id);
     if(error){ setSaving(false); alert('No se pudo guardar.'); return; }
@@ -986,6 +989,12 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
 
           {p.codigo_producto&&<div className="frow"><label>Código Rentman</label>
             <div className="ro mono">{p.codigo_producto}</div></div>}
+
+          <div className="frow"><label>Precio de alquiler ($)</label>
+            {canEdit?
+              <input type="number" min="0" step="any" value={precio} onChange={e=>setPrecio(e.target.value)} placeholder="— sin precio —"/>
+              :<div className="ro">{p.precio_alquiler!=null?('$ '+fmtMoney(p.precio_alquiler)):'—'}</div>}
+          </div>
 
           {!ser&&<ProdHistory productId={p.id}/>}
 
