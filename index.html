@@ -264,6 +264,12 @@
   .seg button{flex:1;padding:9px;border-radius:8px;font-size:13px;font-weight:700;color:var(--muted);background:none}
   .seg button.on{background:#fff;color:#1f2937;box-shadow:0 1px 2px rgba(0,0,0,.08)}
   .det-actions{margin-top:20px}
+  .btn-cam{padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:18px;cursor:pointer}
+  .btn-cam:hover{border-color:var(--teal)}
+  .cam-sheet{max-width:480px}
+  .qr-box{width:100%;min-height:260px;border-radius:12px;overflow:hidden;background:#000}
+  .cam-msg{font-size:13px;color:var(--muted);margin-top:10px;text-align:center}
+  .cam-msg.err{color:var(--danger)}
 </style>
 </head>
 <body>
@@ -377,6 +383,60 @@ const remEstLabel=e=>({pendiente:'Armando',en_evento:'En evento',cerrado:'Cerrad
 const fmtFecha=s=>{ try{ return new Date(String(s).length<=10?s+'T00:00:00':s).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}); }catch(e){ return ''; } };
 const fmtRango=(a,b)=>{ if(!a&&!b) return 'sin fechas'; if(a&&b) return fmtFecha(a)+' → '+fmtFecha(b); return fmtFecha(a||b); };
 
+/* ====== CÁMARA (escaneo QR/código) ====== */
+function loadHtml5Qrcode(cb){
+  if(window.Html5Qrcode) return cb(true);
+  var urls=['https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js','https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'];
+  var i=0;
+  (function tryUrl(){
+    if(window.Html5Qrcode) return cb(true);
+    if(i>=urls.length) return cb(false);
+    var s=document.createElement('script'); s.src=urls[i++];
+    s.onload=function(){ window.Html5Qrcode?cb(true):tryUrl(); };
+    s.onerror=tryUrl;
+    document.head.appendChild(s);
+  })();
+}
+
+function CameraScan({onDetected,onClose}){
+  const [estado,setEstado]=useState('cargando'); // cargando | escaneando | error
+  const [msg,setMsg]=useState('');
+  const instRef=useRef(null);
+  const divId='qr-reader';
+  useEffect(()=>{
+    let cancelado=false;
+    loadHtml5Qrcode(function(ok){
+      if(cancelado) return;
+      if(!ok){ setEstado('error'); setMsg('No se pudo cargar el lector. Cerrá y cargá el código a mano.'); return; }
+      try{
+        const inst=new window.Html5Qrcode(divId);
+        instRef.current=inst;
+        inst.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:240}},
+          function(text){ if(cancelado) return; cancelado=true; inst.stop().then(function(){onDetected(text);}).catch(function(){onDetected(text);}); },
+          function(){}
+        ).then(function(){ if(!cancelado) setEstado('escaneando'); })
+         .catch(function(e){ setEstado('error'); setMsg('No se pudo abrir la cámara'+(e&&e.message?': '+e.message:'')+'. Revisá los permisos o cargá a mano.'); });
+      }catch(e){ setEstado('error'); setMsg('Error: '+(e&&e.message?e.message:e)); }
+    });
+    return function(){ cancelado=true; const ins=instRef.current; if(ins){ try{ ins.stop().catch(function(){}); }catch(e){} } };
+  },[]);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet cam-sheet" onClick={e=>e.stopPropagation()}>
+        <div className="sheet-head"><div className="t">Escanear con cámara</div>
+          <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={onClose}>✕</button></div>
+        <div className="sheet-body">
+          <div id={divId} className="qr-box"></div>
+          {estado==='cargando'&&<div className="cam-msg">Abriendo cámara…</div>}
+          {estado==='escaneando'&&<div className="cam-msg">Apuntá la cámara al código.</div>}
+          {estado==='error'&&<div className="cam-msg err">{msg}</div>}
+        </div>
+        <div className="save-bar"><button className="btn-ghost" onClick={onClose}>Cerrar</button></div>
+      </div>
+    </div>
+  );
+}
+
 function Remitos({perfil,showToast}){
   const [remitos,setRemitos]=useState(null);
   const [sel,setSel]=useState(null);
@@ -448,6 +508,7 @@ function RemitoDetalle({remito,showToast,onBack}){
   const [busy,setBusy]=useState(false);
   const [userId,setUserId]=useState(null);
   const [modo,setModo]=useState('agregar');
+  const [cam,setCam]=useState(false);
   const inputRef=useRef(null);
   const armando=r.estado==='pendiente';
   const enEvento=r.estado==='en_evento';
@@ -508,13 +569,14 @@ function RemitoDetalle({remito,showToast,onBack}){
     await devolverLinea(l);
   };
 
-  const onScan=async()=>{
-    const c=code.trim(); if(!c||busy) return;
+  const procesar=async(c)=>{
+    c=(c||'').trim(); if(!c||busy) return;
     setBusy(true);
     try{ if(modo==='devolver'&&enEvento) await scanDevolucion(c); else await scanSalida(c); }
     catch(e){ alert('Error: '+(e&&e.message?e.message:e)); }
     setBusy(false); setCode(''); refocus();
   };
+  const onScan=()=>procesar(code);
 
   const quitarLinea=async(l)=>{
     if(!confirm('¿Quitar este ítem del remito?')) return;
@@ -528,6 +590,15 @@ function RemitoDetalle({remito,showToast,onBack}){
     if(!confirm('¿Confirmar salida del equipo para "'+(r.evento||'remito')+'"?')) return;
     await sb.from('stock_remitos').update({estado:'en_evento'}).eq('id',r.id);
     setR(prev=>{const n={...prev};n.estado='en_evento';return n;}); setModo('devolver'); if(showToast) showToast('Salida confirmada');
+  };
+  const descartarRemito=async()=>{
+    if(!confirm('¿Descartar este remito? Se borra junto con sus ítems y las unidades escaneadas vuelven a "disponible". No se puede deshacer.')) return;
+    const us=(lineas||[]).filter(l=>l.unidad_id&&!l.devuelto).map(l=>l.unidad_id);
+    if(us.length) await sb.from('stock_unidades').update({estado:'disponible'}).in('id',us);
+    const {error}=await sb.from('stock_remitos').delete().eq('id',r.id);
+    if(error){ alert('No se pudo descartar el remito.'); return; }
+    if(showToast) showToast('Remito descartado');
+    onBack();
   };
   const cerrarRemito=async()=>{
     const pend=(lineas||[]).filter(l=>!l.devuelto).length;
@@ -557,8 +628,10 @@ function RemitoDetalle({remito,showToast,onBack}){
           <div className="scan-row">
             <input ref={inputRef} value={code} onChange={e=>setCode(e.target.value)}
               onKeyDown={e=>{ if(e.key==='Enter') onScan(); }} placeholder="Código…" autoFocus/>
+            <button className="btn-cam" onClick={()=>setCam(true)} title="Escanear con cámara">📷</button>
             <button className="btn-save" disabled={busy} onClick={onScan}>{busy?'…':(modo==='devolver'?'Devolver':'Agregar')}</button>
           </div>
+          {cam&&<CameraScan onDetected={t=>{setCam(false);procesar(t);}} onClose={()=>setCam(false)}/>}
           <div className="scan-hint">📷 El escaneo con cámara llega en la próxima etapa. Por ahora: pistola o a mano.</div>
         </div>}
 
@@ -580,8 +653,14 @@ function RemitoDetalle({remito,showToast,onBack}){
              </div>}
          </div>))}</div>}
 
-      {armando&&<div className="det-actions"><button className="btn-primary wide" onClick={confirmarSalida}>Confirmar salida</button></div>}
-      {enEvento&&<div className="det-actions"><button className="btn-ghost wide" onClick={cerrarRemito}>Cerrar remito</button></div>}
+      {armando&&<div className="det-actions">
+        <button className="btn-primary wide" onClick={confirmarSalida}>Confirmar salida</button>
+        <button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>
+      </div>}
+      {enEvento&&<div className="det-actions">
+        <button className="btn-ghost wide" onClick={cerrarRemito}>Cerrar remito</button>
+        <button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>
+      </div>}
     </div>
   );
 }
@@ -821,6 +900,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
   const [cantidad,setCantidad]=useState(p.cantidad_total||0);
   const [img,setImg]=useState(p.imagen_url||'');
   const [precio,setPrecio]=useState(p.precio_alquiler!=null?p.precio_alquiler:'');
+  const [codGranel,setCodGranel]=useState(p.codigo_granel||'');
   const [units,setUnits]=useState(null);
   const [saving,setSaving]=useState(false);
   const [uploading,setUploading]=useState(false);
@@ -829,6 +909,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
   const [newCode,setNewCode]=useState('');
   const [newSerie,setNewSerie]=useState('');
   const [busyTipo,setBusyTipo]=useState(false);
+  const [camU,setCamU]=useState(false);
   const changed=useRef(false);
   const empresaId=p.empresa_id;
   const archivado=p.archivado;
@@ -866,7 +947,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
     setSaving(true);
     const patch={nombre,area_id:areaId||null,imagen_url:img||null};
     patch.precio_alquiler = (precio===''||precio===null) ? null : Number(precio);
-    if(!ser) patch.cantidad_total=Number(cantidad)||0;
+    if(!ser){ patch.cantidad_total=Number(cantidad)||0; patch.codigo_granel=codGranel.trim()||null; }
     const {error}=await sb.from('stock_productos').update(patch).eq('id',p.id);
     if(error){ setSaving(false); alert('No se pudo guardar.'); return; }
     if(!ser && (Number(cantidad)||0)!==(p.cantidad_total||0))
@@ -964,7 +1045,9 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
                 <input type="number" min="0" value={cantidad} disabled={!canEdit}
                   onChange={e=>setCantidad(e.target.value)}/></div>
               <div className="frow"><label>Código</label>
-                <div className="ro mono">{p.codigo_granel||'—'}</div></div>
+                {canEdit?
+                  <input type="text" value={codGranel} onChange={e=>setCodGranel(e.target.value)} placeholder="— sin código —"/>
+                  :<div className="ro mono">{p.codigo_granel||'—'}</div>}</div>
             </div>
             :
             <div className="frow"><label>Unidades ({units?units.length:'…'})</label>
@@ -977,8 +1060,12 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
                 <div className="addunit">
                   <div className="row">
                     <input type="text" value={newCode} onChange={e=>setNewCode(e.target.value)} placeholder="Código / escaneo"/>
+                    <button className="btn-cam" onClick={()=>setCamU(true)} title="Escanear con cámara">📷</button>
+                  </div>
+                  <div className="row" style={{marginTop:8}}>
                     <input type="text" value={newSerie} onChange={e=>setNewSerie(e.target.value)} placeholder="Nº serie (opc.)"/>
                   </div>
+                  {camU&&<CameraScan onDetected={t=>{setCamU(false);setNewCode(t);}} onClose={()=>setCamU(false)}/>}
                   <div className="u-actions" style={{marginTop:8}}>
                     <button className="btn-ghost" onClick={()=>{setAdding(false);setNewCode('');setNewSerie('');}}>Cancelar</button>
                     <button className="btn-save" disabled={saving} onClick={addUnit}>{saving?'…':'Agregar unidad'}</button>
