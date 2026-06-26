@@ -270,6 +270,9 @@
   .qr-box{width:100%;min-height:260px;border-radius:12px;overflow:hidden;background:#000}
   .cam-msg{font-size:13px;color:var(--muted);margin-top:10px;text-align:center}
   .cam-msg.err{color:var(--danger)}
+  .cam-feed{margin-top:10px;text-align:center}
+  .cam-ok{font-size:15px;font-weight:700;color:#1f8a4c;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
+  .cam-count{font-size:12px;color:var(--muted);margin-top:4px}
 </style>
 </head>
 <body>
@@ -398,11 +401,27 @@ function loadHtml5Qrcode(cb){
   })();
 }
 
-function CameraScan({onDetected,onClose}){
+function CameraScan({onDetected,onClose,continuo}){
   const [estado,setEstado]=useState('cargando'); // cargando | escaneando | error
   const [msg,setMsg]=useState('');
+  const [ultimo,setUltimo]=useState('');
+  const [cuenta,setCuenta]=useState(0);
   const instRef=useRef(null);
+  const lastRef=useRef({code:'',t:0});
+  const queueRef=useRef([]);
+  const procRef=useRef(false);
   const divId='qr-reader';
+
+  const drain=()=>{
+    if(procRef.current) return;
+    const next=queueRef.current.shift();
+    if(next===undefined) return;
+    procRef.current=true;
+    Promise.resolve(onDetected(next))
+      .then(function(){ procRef.current=false; drain(); })
+      .catch(function(){ procRef.current=false; drain(); });
+  };
+
   useEffect(()=>{
     let cancelado=false;
     loadHtml5Qrcode(function(ok){
@@ -412,7 +431,20 @@ function CameraScan({onDetected,onClose}){
         const inst=new window.Html5Qrcode(divId);
         instRef.current=inst;
         inst.start({facingMode:'environment'},{fps:10,qrbox:{width:240,height:240}},
-          function(text){ if(cancelado) return; cancelado=true; inst.stop().then(function(){onDetected(text);}).catch(function(){onDetected(text);}); },
+          function(text){
+            if(cancelado) return;
+            const now=Date.now();
+            // anti-repetido: mismo código dentro de 2.5s => ignorar
+            if(text===lastRef.current.code && now-lastRef.current.t<2500) return;
+            lastRef.current={code:text,t:now};
+            if(continuo){
+              setUltimo(text); setCuenta(function(c){return c+1;});
+              queueRef.current.push(text); drain();
+            }else{
+              cancelado=true;
+              inst.stop().then(function(){onDetected(text);}).catch(function(){onDetected(text);});
+            }
+          },
           function(){}
         ).then(function(){ if(!cancelado) setEstado('escaneando'); })
          .catch(function(e){ setEstado('error'); setMsg('No se pudo abrir la cámara'+(e&&e.message?': '+e.message:'')+'. Revisá los permisos o cargá a mano.'); });
@@ -420,18 +452,28 @@ function CameraScan({onDetected,onClose}){
     });
     return function(){ cancelado=true; const ins=instRef.current; if(ins){ try{ ins.stop().catch(function(){}); }catch(e){} } };
   },[]);
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet cam-sheet" onClick={e=>e.stopPropagation()}>
-        <div className="sheet-head"><div className="t">Escanear con cámara</div>
+        <div className="sheet-head"><div className="t">{continuo?'Escaneo en seguidilla':'Escanear con cámara'}</div>
           <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={onClose}>✕</button></div>
         <div className="sheet-body">
           <div id={divId} className="qr-box"></div>
           {estado==='cargando'&&<div className="cam-msg">Abriendo cámara…</div>}
-          {estado==='escaneando'&&<div className="cam-msg">Apuntá la cámara al código.</div>}
+          {estado==='escaneando'&&!continuo&&<div className="cam-msg">Apuntá la cámara al código.</div>}
+          {estado==='escaneando'&&continuo&&
+            <div className="cam-feed">
+              {ultimo?<div className="cam-ok">✓ {ultimo}</div>:<div className="cam-msg">Apuntá al código. Seguí escaneando…</div>}
+              <div className="cam-count">{cuenta} escaneado{cuenta===1?'':'s'}</div>
+            </div>}
           {estado==='error'&&<div className="cam-msg err">{msg}</div>}
         </div>
-        <div className="save-bar"><button className="btn-ghost" onClick={onClose}>Cerrar</button></div>
+        <div className="save-bar">
+          <button className={continuo&&cuenta>0?'btn-save':'btn-ghost'} style={continuo?{width:'100%'}:null} onClick={onClose}>
+            {continuo?('Listo'+(cuenta>0?' ('+cuenta+')':'')):'Cerrar'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -530,11 +572,12 @@ function RemitoDetalle({remito,showToast,onBack}){
 
   const logHist=async(o)=>{ await sb.from('stock_historial').insert({empresa_id:EMPRESA_ID,unidad_id:o.unidad_id||null,producto_id:o.producto_id||null,remito_id:r.id,accion:o.accion,detalle:o.detalle||null,usuario_id:userId}); };
   const refocus=()=>{ if(inputRef.current) inputRef.current.focus(); };
+  const aviso=m=>{ if(showToast) showToast(m); else alert(m); };
 
   const scanSalida=async(c)=>{
     const {data:u}=await sb.from('stock_unidades').select('id,codigo,estado,producto_id,activo').eq('codigo',c).eq('activo',true).maybeSingle();
     if(u){
-      if(u.estado==='en_evento'){ alert('Esa unidad ya está en un evento.'); return; }
+      if(u.estado==='en_evento'){ aviso('Ya en un evento: '+c); return; }
       await sb.from('stock_remito_lineas').insert({remito_id:r.id,unidad_id:u.id,producto_id:u.producto_id,cantidad:1,fecha_salida:new Date().toISOString()});
       await sb.from('stock_unidades').update({estado:'en_evento'}).eq('id',u.id);
       await logHist({unidad_id:u.id,accion:'salida',detalle:'Salida — '+(r.evento||'remito')});
@@ -552,7 +595,7 @@ function RemitoDetalle({remito,showToast,onBack}){
       }
       return;
     }
-    alert('Código no encontrado: '+c);
+    aviso('No encontrado: '+c);
   };
 
   const devolverLinea=async(l)=>{
@@ -565,7 +608,7 @@ function RemitoDetalle({remito,showToast,onBack}){
   const scanDevolucion=async(c)=>{
     let l=(lineas||[]).find(x=>x._u&&x._u.codigo===c&&!x.devuelto);
     if(!l) l=(lineas||[]).find(x=>!x.unidad_id&&x._p&&x._p.codigo_granel===c&&!x.devuelto);
-    if(!l){ alert('Ese código no está pendiente de devolución en este remito.'); return; }
+    if(!l){ aviso('No está pendiente de devolución: '+c); return; }
     await devolverLinea(l);
   };
 
@@ -631,7 +674,7 @@ function RemitoDetalle({remito,showToast,onBack}){
             <button className="btn-cam" onClick={()=>setCam(true)} title="Escanear con cámara">📷</button>
             <button className="btn-save" disabled={busy} onClick={onScan}>{busy?'…':(modo==='devolver'?'Devolver':'Agregar')}</button>
           </div>
-          {cam&&<CameraScan onDetected={t=>{setCam(false);procesar(t);}} onClose={()=>setCam(false)}/>}
+          {cam&&<CameraScan continuo={true} onDetected={procesar} onClose={()=>setCam(false)}/>}
           <div className="scan-hint">📷 El escaneo con cámara llega en la próxima etapa. Por ahora: pistola o a mano.</div>
         </div>}
 
