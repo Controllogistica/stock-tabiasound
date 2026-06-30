@@ -310,6 +310,21 @@
     .hoja{box-shadow:none;border-radius:0;max-width:none;width:100%;padding:0;margin:0}
     @page{size:A4;margin:14mm}
   }
+
+  /* ===== Etiqueta imprimible (barcode / QR) ===== */
+  .lbl-btn{background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;line-height:1}
+  .label-overlay{position:fixed;inset:0;background:rgba(15,18,20,.65);z-index:320;overflow:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+  .label-bar{width:100%;max-width:520px;display:flex;justify-content:space-between;align-items:center;gap:10px;position:sticky;top:0}
+  .label-bar .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+  .label-bar .seg button{padding:8px 12px;border:none;background:#fff;color:#444;font-size:13px;cursor:pointer}
+  .label-bar .seg button.on{background:var(--teal);color:#fff}
+  .label-card{background:#fff;border-radius:10px;padding:22px;display:flex;flex-direction:column;align-items:center;gap:10px}
+  .label{height:24mm;background:#fff;border:1px dashed #bbb;display:flex;align-items:center;justify-content:center;padding:1mm 2mm;box-sizing:border-box;overflow:hidden}
+  .label .bc{max-width:100%;height:auto;display:block}
+  .label .qrwrap{display:flex;align-items:center;gap:8px;height:100%}
+  .label .qr{display:block}
+  .label .qrcode{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:#111}
+  @media print{ .label{border:none} }
 </style>
 </head>
 <body>
@@ -440,6 +455,26 @@ function loadHtml5Qrcode(cb){
   })();
 }
 
+/* ====== Cargadores de librerías externas (con CDN de respaldo) ====== */
+function loadScriptSeq(urls, test, cb){
+  if(test()) return cb(true);
+  var i=0;
+  (function go(){
+    if(test()) return cb(true);
+    if(i>=urls.length) return cb(false);
+    var s=document.createElement('script'); s.src=urls[i++];
+    s.onload=function(){ test()?cb(true):go(); };
+    s.onerror=go;
+    document.head.appendChild(s);
+  })();
+}
+function loadBarcodeLib(cb){ loadScriptSeq(
+  ['https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js','https://unpkg.com/jsbarcode@3.11.6/dist/JsBarcode.all.min.js'],
+  function(){ return !!window.JsBarcode; }, cb); }
+function loadQrLib(cb){ loadScriptSeq(
+  ['https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js','https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js'],
+  function(){ return !!(window.QRCode&&window.QRCode.toCanvas); }, cb); }
+
 function CameraScan({onDetected,onClose,continuo}){
   const [estado,setEstado]=useState('cargando'); // cargando | escaneando | error
   const [msg,setMsg]=useState('');
@@ -516,6 +551,67 @@ function CameraScan({onDetected,onClose,continuo}){
       </div>
     </div>
   );
+}
+
+/* ====== ETIQUETA IMPRIMIBLE (código de barras / QR) ====== */
+function LabelPrint({code,onClose}){
+  const [tipo,setTipo]=useState('barcode'); // barcode | qr
+  const [estado,setEstado]=useState('cargando'); // cargando | listo | error
+  const [msg,setMsg]=useState('');
+  const bcRef=useRef(null);
+  const qrRef=useRef(null);
+  useEffect(()=>{
+    let cancel=false; setEstado('cargando'); setMsg('');
+    if(tipo==='barcode'){
+      loadBarcodeLib(function(ok){
+        if(cancel) return;
+        if(!ok||!window.JsBarcode){ setEstado('error'); setMsg('No se pudo cargar el generador de código de barras.'); return; }
+        try{
+          window.JsBarcode(bcRef.current, String(code), {format:'CODE128',displayValue:true,fontSize:13,height:42,width:1.5,margin:0,textMargin:2});
+          setEstado('listo');
+        }catch(e){ setEstado('error'); setMsg('No se pudo generar el código: '+(e&&e.message?e.message:e)); }
+      });
+    }else{
+      loadQrLib(function(ok){
+        if(cancel) return;
+        if(!ok||!window.QRCode||!window.QRCode.toCanvas){ setEstado('error'); setMsg('No se pudo cargar el generador de QR. Probá con código de barras.'); return; }
+        try{
+          window.QRCode.toCanvas(qrRef.current, String(code), {width:72,margin:0}, function(err){
+            if(cancel) return;
+            if(err){ setEstado('error'); setMsg('No se pudo generar el QR.'); } else setEstado('listo');
+          });
+        }catch(e){ setEstado('error'); setMsg('No se pudo generar el QR: '+(e&&e.message?e.message:e)); }
+      });
+    }
+    return function(){ cancel=true; };
+  },[tipo,code]);
+  const L = tipo==='barcode'?60:40;
+  const cont=(
+    <div className="label-overlay" onClick={onClose}>
+      <style>{'@media print{#root{display:none!important}.label-overlay{position:static!important;background:#fff!important;display:block!important;padding:0!important}.label-bar{display:none!important}.label-card{box-shadow:none!important;margin:0!important;border-radius:0!important;padding:0!important;background:transparent!important}@page{size:'+L+'mm 24mm;margin:0}}'}</style>
+      <div className="label-bar" onClick={e=>e.stopPropagation()}>
+        <div className="seg">
+          <button className={tipo==='barcode'?'on':''} onClick={()=>setTipo('barcode')}>Código de barras</button>
+          <button className={tipo==='qr'?'on':''} onClick={()=>setTipo('qr')}>QR</button>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn-ghost" onClick={onClose}>Cerrar</button>
+          <button className="btn-save" disabled={estado!=='listo'} onClick={()=>window.print()}>🖨️ Imprimir</button>
+        </div>
+      </div>
+      <div className="label-card" onClick={e=>e.stopPropagation()}>
+        <div className="label" style={{width:L+'mm'}}>
+          {tipo==='barcode'
+            ? <svg ref={bcRef} className="bc"></svg>
+            : <div className="qrwrap"><canvas ref={qrRef} className="qr"></canvas><div className="qrcode">{code}</div></div>}
+        </div>
+        {estado==='cargando'&&<div className="cam-msg">Generando…</div>}
+        {estado==='error'&&<div className="cam-msg err">{msg}</div>}
+        <div className="cam-msg">Cinta 24 mm · largo ~{L} mm</div>
+      </div>
+    </div>
+  );
+  return ReactDOM.createPortal(cont, document.body);
 }
 
 /* ====== REMITO IMPRIMIBLE ====== */
@@ -969,6 +1065,7 @@ function HistList({hist}){
 /* ====== FILA DE UNIDAD ====== */
 function UnitRow({u,canEdit,logHist,onChanged}){
   const [open,setOpen]=useState(false);
+  const [lbl,setLbl]=useState(false);
   const [codigo,setCodigo]=useState(u.codigo||'');
   const [estado,setEstado]=useState(u.estado||'disponible');
   const [obs,setObs]=useState('');
@@ -1003,7 +1100,9 @@ function UnitRow({u,canEdit,logHist,onChanged}){
       <div className="u-head" onClick={toggle}>
         <span className="c">{u.codigo}</span>
         <span className={'est '+u.estado}>{estLabel(u.estado)}</span>
+        <button className="lbl-btn" onClick={e=>{e.stopPropagation();setLbl(true);}} title="Imprimir etiqueta">🏷️</button>
       </div>
+      {lbl&&<LabelPrint code={u.codigo} onClose={()=>setLbl(false)}/>}
       {open&&
         <div className="u-edit">
           {canEdit&&
@@ -1061,6 +1160,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
   const [newSerie,setNewSerie]=useState('');
   const [busyTipo,setBusyTipo]=useState(false);
   const [camU,setCamU]=useState(false);
+  const [lblG,setLblG]=useState(false);
   const changed=useRef(false);
   const empresaId=p.empresa_id;
   const archivado=p.archivado;
@@ -1196,9 +1296,13 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
                 <input type="number" min="0" value={cantidad} disabled={!canEdit}
                   onChange={e=>setCantidad(e.target.value)}/></div>
               <div className="frow"><label>Código</label>
-                {canEdit?
-                  <input type="text" value={codGranel} onChange={e=>setCodGranel(e.target.value)} placeholder="— sin código —"/>
-                  :<div className="ro mono">{p.codigo_granel||'—'}</div>}</div>
+                <div className="row">
+                  {canEdit?
+                    <input type="text" value={codGranel} onChange={e=>setCodGranel(e.target.value)} placeholder="— sin código —"/>
+                    :<div className="ro mono" style={{flex:1}}>{p.codigo_granel||'—'}</div>}
+                  <button className="btn-cam" title="Imprimir etiqueta" disabled={!(codGranel||p.codigo_granel)} onClick={()=>setLblG(true)}>🏷️</button>
+                </div></div>
+              {lblG&&<LabelPrint code={codGranel||p.codigo_granel||''} onClose={()=>setLblG(false)}/>}
             </div>
             :
             <div className="frow"><label>Unidades ({units?units.length:'…'})</label>
