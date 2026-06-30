@@ -322,7 +322,8 @@
   .label{height:24mm;background:#fff;border:1px dashed #bbb;display:flex;align-items:center;justify-content:center;padding:1mm 2mm;box-sizing:border-box;overflow:hidden}
   .label .bc{max-width:100%;height:auto;display:block}
   .label .qrwrap{display:flex;align-items:center;gap:8px;height:100%}
-  .label .qr{display:block}
+  .label .qr{display:block;width:76px;height:76px;overflow:hidden}
+  .label .qr canvas,.label .qr img{display:block;width:76px !important;height:76px !important}
   .label .qrcode{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:#111}
   @media print{ .label{border:none} }
 </style>
@@ -472,8 +473,8 @@ function loadBarcodeLib(cb){ loadScriptSeq(
   ['https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js','https://unpkg.com/jsbarcode@3.11.6/dist/JsBarcode.all.min.js'],
   function(){ return !!window.JsBarcode; }, cb); }
 function loadQrLib(cb){ loadScriptSeq(
-  ['https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js','https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js'],
-  function(){ return !!(window.QRCode&&window.QRCode.toCanvas); }, cb); }
+  ['https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js','https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js'],
+  function(){ return typeof window.QRCode==='function'; }, cb); }
 
 function CameraScan({onDetected,onClose,continuo}){
   const [estado,setEstado]=useState('cargando'); // cargando | escaneando | error
@@ -574,12 +575,12 @@ function LabelPrint({code,onClose}){
     }else{
       loadQrLib(function(ok){
         if(cancel) return;
-        if(!ok||!window.QRCode||!window.QRCode.toCanvas){ setEstado('error'); setMsg('No se pudo cargar el generador de QR. Probá con código de barras.'); return; }
+        if(!ok||typeof window.QRCode!=='function'){ setEstado('error'); setMsg('No se pudo cargar el generador de QR. Probá con código de barras.'); return; }
         try{
-          window.QRCode.toCanvas(qrRef.current, String(code), {width:72,margin:0}, function(err){
-            if(cancel) return;
-            if(err){ setEstado('error'); setMsg('No se pudo generar el QR.'); } else setEstado('listo');
-          });
+          if(qrRef.current){ qrRef.current.innerHTML=''; }
+          var lvl = (window.QRCode.CorrectLevel&&window.QRCode.CorrectLevel.M!=null)?window.QRCode.CorrectLevel.M:null;
+          new window.QRCode(qrRef.current, lvl!=null?{text:String(code),width:76,height:76,correctLevel:lvl}:{text:String(code),width:76,height:76});
+          setEstado('listo');
         }catch(e){ setEstado('error'); setMsg('No se pudo generar el QR: '+(e&&e.message?e.message:e)); }
       });
     }
@@ -603,7 +604,7 @@ function LabelPrint({code,onClose}){
         <div className="label" style={{width:L+'mm'}}>
           {tipo==='barcode'
             ? <svg ref={bcRef} className="bc"></svg>
-            : <div className="qrwrap"><canvas ref={qrRef} className="qr"></canvas><div className="qrcode">{code}</div></div>}
+            : <div className="qrwrap"><div ref={qrRef} className="qr"></div><div className="qrcode">{code}</div></div>}
         </div>
         {estado==='cargando'&&<div className="cam-msg">Generando…</div>}
         {estado==='error'&&<div className="cam-msg err">{msg}</div>}
