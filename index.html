@@ -619,7 +619,7 @@ function LabelPrint({code,onClose}){
   const L = tipo==='barcode'?50:20;
   const cont=(
     <div className="label-overlay" onClick={onClose}>
-      <style>{'@media print{#root{display:none!important}.label-overlay{position:static!important;background:#fff!important;display:block!important;padding:0!important}.label-bar{display:none!important}.label-card{box-shadow:none!important;margin:0!important;border-radius:0!important;padding:0!important;background:transparent!important}@page{size:'+L+'mm 24mm;margin:0}}'}</style>
+      <style>{'@media print{#root{display:none!important}.label-overlay{position:static!important;background:#fff!important;display:block!important;padding:0!important;margin:0!important}.label-bar{display:none!important}.label-card{display:block!important;box-shadow:none!important;margin:0!important;border-radius:0!important;padding:0!important;background:transparent!important;width:'+L+'mm!important}.label-card .cam-msg{display:none!important}.label{border:none!important;width:'+L+'mm!important;height:24mm!important;margin:0!important}@page{size:'+L+'mm 24mm;margin:0}}'}</style>
       <div className="label-bar" onClick={e=>e.stopPropagation()}>
         <div className="seg">
           <button className={tipo==='barcode'?'on':''} onClick={()=>setTipo('barcode')}>Código de barras</button>
