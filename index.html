@@ -258,6 +258,8 @@
 .lote summary{cursor:pointer;font-size:13px;font-weight:600;color:#444;user-select:none}
 .lote textarea{width:100%;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:13px;resize:vertical;box-sizing:border-box}
 .lote .btn-save{margin-top:8px;width:100%}
+.hbtn{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;color:#334;cursor:pointer;transition:all .15s}
+.hbtn:hover{border-color:var(--teal);color:var(--teal)}
 .rem-est.e-incompleto{background:#FFEAD5;color:#C2410C}
 .e-incompleto{background:#FFEAD5;color:#C2410C}
 .lin-badge.lost{font-size:11px;font-weight:700;color:#b42318;background:#FDECEC;padding:5px 10px;border-radius:20px;white-space:nowrap}
@@ -802,7 +804,7 @@ function RemitoDetalle({remito,showToast,onBack}){
   const [code,setCode]=useState('');
   const [busy,setBusy]=useState(false);
   const [userId,setUserId]=useState(null);
-  const [modo,setModo]=useState('agregar');
+  const [modo,setModo]=useState(columnaDe(r)==='devolucion'?'devolver':'agregar');
   const [cam,setCam]=useState(false);
   const [lote,setLote]=useState('');
   const [loteBusy,setLoteBusy]=useState(false);
@@ -933,6 +935,11 @@ function RemitoDetalle({remito,showToast,onBack}){
     await sb.from('stock_remitos').update({estado:'pendiente'}).eq('id',r.id);
     setR(prev=>({...prev,estado:'pendiente'})); if(showToast) showToast('Volvió a preparación');
   };
+  const reabrirRemito=async()=>{
+    if(!confirm('¿Reabrir este remito? Vuelve a quedar activo (En preparación) para seguir trabajándolo. Los equipos que ya estaban cargados siguen igual.')) return;
+    await sb.from('stock_remitos').update({estado:'pendiente'}).eq('id',r.id);
+    setR(prev=>({...prev,estado:'pendiente'})); if(showToast) showToast('Remito reabierto');
+  };
 
   const cerrarRemito=async()=>{
     const pend=(lineas||[]).filter(l=>!l.devuelto).length;
@@ -962,7 +969,7 @@ function RemitoDetalle({remito,showToast,onBack}){
   const pendientes=(lineas||[]).filter(l=>!l.devuelto).length;
   return (
     <div className="rwrap">
-      <button className="link-btn" onClick={onBack}>‹ Volver a remitos</button>
+      <button className="hbtn" onClick={onBack}>‹ Volver a remitos</button>
       <div className="det-head">
         <div><div className="rem-ev" style={{fontSize:20}}>{r.evento||'(sin evento)'}</div>
           <div className="rem-sub">{r.cliente||'—'} · {fmtRango(r.fecha_desde,r.fecha_hasta)}</div></div>
@@ -970,7 +977,7 @@ function RemitoDetalle({remito,showToast,onBack}){
       </div>
 
       {!editH ?
-        <button className="link-btn" style={{marginTop:6}} onClick={abrirEdit}>✏️ Editar datos del remito</button>
+        <button className="hbtn" style={{marginTop:6}} onClick={abrirEdit}>✏️ Editar datos del remito</button>
       :
         <div className="edit-head">
           <div className="frow"><label>Evento</label><input value={hd.evento} onChange={e=>setHd({...hd,evento:e.target.value})}/></div>
@@ -1048,7 +1055,11 @@ function RemitoDetalle({remito,showToast,onBack}){
         <button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>
       </div>}
       {incompleto&&<div className="det-actions">
-        <button className="btn-danger wide" onClick={descartarRemito}>Descartar remito</button>
+        <button className="btn-ghost wide" onClick={reabrirRemito}>↩ Reabrir remito</button>
+        <button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>
+      </div>}
+      {r.estado==='cerrado'&&<div className="det-actions">
+        <button className="btn-ghost wide" onClick={reabrirRemito}>↩ Reabrir remito</button>
       </div>}
     </div>
   );
