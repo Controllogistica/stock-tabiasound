@@ -254,6 +254,10 @@
 .kcol-n{background:#fff;border-radius:20px;padding:1px 9px;font-size:12px;color:#555;font-family:'Inter';font-weight:600}
 .kcol-empty{color:#aab1ba;font-size:13px;text-align:center;padding:10px}
 @media(max-width:820px){ .kanban{grid-template-columns:1fr} }
+.lote{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff}
+.lote summary{cursor:pointer;font-size:13px;font-weight:600;color:#444;user-select:none}
+.lote textarea{width:100%;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:13px;resize:vertical;box-sizing:border-box}
+.lote .btn-save{margin-top:8px;width:100%}
 .rem-est.e-incompleto{background:#FFEAD5;color:#C2410C}
 .e-incompleto{background:#FFEAD5;color:#C2410C}
 .lin-badge.lost{font-size:11px;font-weight:700;color:#b42318;background:#FDECEC;padding:5px 10px;border-radius:20px;white-space:nowrap}
@@ -800,6 +804,8 @@ function RemitoDetalle({remito,showToast,onBack}){
   const [userId,setUserId]=useState(null);
   const [modo,setModo]=useState('agregar');
   const [cam,setCam]=useState(false);
+  const [lote,setLote]=useState('');
+  const [loteBusy,setLoteBusy]=useState(false);
   const [imprimir,setImprimir]=useState(false);
   const [editH,setEditH]=useState(false);
   const [hd,setHd]=useState({evento:'',cliente:'',direccion:'',desde:'',hasta:''});
@@ -875,6 +881,19 @@ function RemitoDetalle({remito,showToast,onBack}){
     setBusy(false); setCode(''); refocus();
   };
   const onScan=()=>procesar(code);
+
+  const procesarLote=async()=>{
+    const codigos=lote.split(/[\r\n]+/).map(s=>s.trim()).filter(Boolean);
+    if(!codigos.length){ if(showToast) showToast('Escaneá o pegá códigos primero.'); return; }
+    setLoteBusy(true);
+    for(let i=0;i<codigos.length;i++){
+      try{ if(modo==='devolver') await scanDevolucion(codigos[i]); else await scanSalida(codigos[i]); }
+      catch(e){ /* sigue con el resto */ }
+    }
+    setLoteBusy(false); setLote('');
+    loadLineas();
+    if(showToast) showToast('Lote procesado: '+codigos.length+' código(s)');
+  };
 
   const quitarLinea=async(l)=>{
     if(!confirm('¿Quitar este ítem del remito?')) return;
@@ -986,6 +1005,15 @@ function RemitoDetalle({remito,showToast,onBack}){
             <button className="btn-save" disabled={busy} onClick={onScan}>{busy?'…':(modo==='devolver'?'Devolver':'Agregar')}</button>
           </div>
           {cam&&<CameraScan continuo={true} onDetected={procesar} onClose={()=>setCam(false)}/>}
+
+          <details className="lote">
+            <summary>⌨️ Lote de pistola (varios códigos juntos)</summary>
+            <textarea value={lote} onChange={e=>setLote(e.target.value)} rows={4}
+              placeholder={"Poné el cursor acá y disparás la pistola en modo CR+LF (un código por línea).\nTambién podés pegar una lista."}/>
+            <button className="btn-save" disabled={loteBusy} onClick={procesarLote}>
+              {loteBusy?'Procesando…':('Procesar '+lote.split(/[\r\n]+/).map(s=>s.trim()).filter(Boolean).length+' código(s)')}
+            </button>
+          </details>
           <div className="scan-hint">📷 El escaneo con cámara llega en la próxima etapa. Por ahora: pistola o a mano.</div>
         </div>}
 
