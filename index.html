@@ -821,7 +821,7 @@ function RemitoDetalle({remito,showToast,onBack}){
   useEffect(()=>{ sb.auth.getUser().then(({data})=>setUserId(data.user?data.user.id:null)); },[]);
   const loadLineas=useCallback(async()=>{
     const {data:ls}=await sb.from('stock_remito_lineas')
-      .select('id,cantidad,devuelto,fecha_salida,fecha_devolucion,unidad_id,producto_id')
+      .select('id,cantidad,cantidad_devuelta,devuelto,fecha_salida,fecha_devolucion,unidad_id,producto_id')
       .eq('remito_id',r.id).order('fecha_salida',{ascending:true,nullsFirst:true});
     const lns=ls||[];
     const uids=[...new Set(lns.filter(l=>l.unidad_id).map(l=>l.unidad_id))];
@@ -862,10 +862,20 @@ function RemitoDetalle({remito,showToast,onBack}){
   };
 
   const devolverLinea=async(l)=>{
-    await sb.from('stock_remito_lineas').update({devuelto:true,fecha_devolucion:new Date().toISOString()}).eq('id',l.id);
-    if(l.unidad_id){ await sb.from('stock_unidades').update({estado:'disponible'}).eq('id',l.unidad_id);
-      await logHist({unidad_id:l.unidad_id,accion:'devolucion',detalle:'Devolución — '+(r.evento||'remito')}); }
-    else await logHist({producto_id:l.producto_id,accion:'devolucion',detalle:'Devolución — '+(r.evento||'remito')});
+    if(l.unidad_id){
+      await sb.from('stock_remito_lineas').update({devuelto:true,fecha_devolucion:new Date().toISOString()}).eq('id',l.id);
+      await sb.from('stock_unidades').update({estado:'disponible'}).eq('id',l.unidad_id);
+      await logHist({unidad_id:l.unidad_id,accion:'devolucion',detalle:'Devolución — '+(r.evento||'remito')});
+    } else {
+      const restante=(Number(l.cantidad)||0)-(Number(l.cantidad_devuelta)||0);
+      if(restante<=0){ loadLineas(); return; }
+      const q=Number(prompt('¿Cuántos "'+(l._p?l._p.nombre:'')+'" volvieron? (faltan '+restante+')', String(restante)));
+      if(!q||q<=0) return;
+      const nuevaDev=Math.min((Number(l.cantidad_devuelta)||0)+q, Number(l.cantidad)||0);
+      const completo=nuevaDev>=(Number(l.cantidad)||0);
+      await sb.from('stock_remito_lineas').update({cantidad_devuelta:nuevaDev, devuelto:completo, fecha_devolucion:completo?new Date().toISOString():null}).eq('id',l.id);
+      await logHist({producto_id:l.producto_id,accion:'devolucion',detalle:'Devolución '+q+' u — '+(r.evento||'remito')});
+    }
     loadLineas();
   };
   const scanDevolucion=async(c)=>{
@@ -1021,7 +1031,6 @@ function RemitoDetalle({remito,showToast,onBack}){
               {loteBusy?'Procesando…':('Procesar '+lote.split(/[\r\n]+/).map(s=>s.trim()).filter(Boolean).length+' código(s)')}
             </button>
           </details>
-          <div className="scan-hint">📷 El escaneo con cámara llega en la próxima etapa. Por ahora: pistola o a mano.</div>
         </div>}
 
       <div className="lin-head">Ítems ({lineas?lineas.length:'…'}){(activo||incompleto)&&lineas?' · pendientes: '+pendientes:''}</div>
@@ -1032,7 +1041,7 @@ function RemitoDetalle({remito,showToast,onBack}){
            <div className="lin-main">
              <div className="lin-nm">{l._p?l._p.nombre:'(producto)'}</div>
              <div className="lin-sub">
-               {l.unidad_id?<span className="mono">{l._u?l._u.codigo:'—'}</span>:<span>x{l.cantidad} · {(l._p&&l._p.codigo_granel)||'granel'}</span>}
+               {l.unidad_id?<span className="mono">{l._u?l._u.codigo:'—'}</span>:<span>x{l.cantidad} · {(l._p&&l._p.codigo_granel)||'granel'}{(Number(l.cantidad_devuelta)>0)?' · '+l.cantidad_devuelta+' devueltos':''}</span>}
              </div>
            </div>
            {l.devuelto
@@ -1044,7 +1053,7 @@ function RemitoDetalle({remito,showToast,onBack}){
                  </div>
                : <div className="lin-acts">
                    <button className="lin-x" onClick={()=>quitarLinea(l)}>Quitar</button>
-                   {enEvento&&<button className="lin-dev" onClick={()=>devolverLinea(l)}>Devolver</button>}
+                   <button className="lin-dev" onClick={()=>devolverLinea(l)}>Devolver</button>
                  </div>}
          </div>))}</div>}
 
