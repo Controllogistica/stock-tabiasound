@@ -816,9 +816,9 @@ function NuevoRemito({onClose,onCreated}){
 function RemitoDetalle({remito,perfil,showToast,onBack}){
   const isAdmin = !!(perfil && perfil.rol_stock==='admin');
   const esGestion = !!(perfil && (perfil.rol_stock==='admin'||perfil.rol_stock==='jefe_area'));
+  const [r,setR]=useState(remito);
   const esPropio = !!(perfil && perfil.id && r.creado_por && perfil.id===r.creado_por);
   const puedeGestion = esGestion || esPropio;
-  const [r,setR]=useState(remito);
   const [lineas,setLineas]=useState(null);
   const [code,setCode]=useState('');
   const [busy,setBusy]=useState(false);
