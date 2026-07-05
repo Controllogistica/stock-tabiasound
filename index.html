@@ -260,6 +260,12 @@
 .lote .btn-save{margin-top:8px;width:100%}
 .hbtn{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;color:#334;cursor:pointer;transition:all .15s}
 .hbtn:hover{border-color:var(--teal);color:var(--teal)}
+.adj-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}
+.adj-title{font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.adj-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.adj-row a{text-decoration:none}
+.adj-upload{cursor:pointer;display:inline-flex}
+.adj-upload.dis{opacity:.6;pointer-events:none}
 .rem-est.e-incompleto{background:#FFEAD5;color:#C2410C}
 .rem-est.e-retrasado{background:#FDECEC;color:#b42318}
 .e-incompleto{background:#FFEAD5;color:#C2410C}
@@ -721,7 +727,7 @@ function Remitos({perfil,showToast,archivados}){
   const [creating,setCreating]=useState(false);
   const load=()=>sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}).limit(100).then(({data})=>setRemitos(data||[]));
   useEffect(()=>{ load(); },[]);
-  if(sel) return <RemitoDetalle remito={sel} showToast={showToast} onBack={()=>{setSel(null);load();}}/>;
+  if(sel) return <RemitoDetalle remito={sel} perfil={perfil} showToast={showToast} onBack={()=>{setSel(null);load();}}/>;
   const card=(r)=>{
     const ch=chipRemito(r);
     return (
@@ -807,7 +813,11 @@ function NuevoRemito({onClose,onCreated}){
   );
 }
 
-function RemitoDetalle({remito,showToast,onBack}){
+function RemitoDetalle({remito,perfil,showToast,onBack}){
+  const isAdmin = !!(perfil && perfil.rol_stock==='admin');
+  const esGestion = !!(perfil && (perfil.rol_stock==='admin'||perfil.rol_stock==='jefe_area'));
+  const esPropio = !!(perfil && perfil.id && r.creado_por && perfil.id===r.creado_por);
+  const puedeGestion = esGestion || esPropio;
   const [r,setR]=useState(remito);
   const [lineas,setLineas]=useState(null);
   const [code,setCode]=useState('');
@@ -818,6 +828,7 @@ function RemitoDetalle({remito,showToast,onBack}){
   const [lote,setLote]=useState('');
   const [loteBusy,setLoteBusy]=useState(false);
   const [imprimir,setImprimir]=useState(false);
+  const [subiendoAdj,setSubiendoAdj]=useState(false);
   const [editH,setEditH]=useState(false);
   const [hd,setHd]=useState({evento:'',cliente:'',direccion:'',desde:'',hasta:''});
   const inputRef=useRef(null);
@@ -938,6 +949,25 @@ function RemitoDetalle({remito,showToast,onBack}){
     if(showToast) showToast('Remito descartado');
     onBack();
   };
+  const subirAdjunto=async(file)=>{
+    if(!file) return;
+    setSubiendoAdj(true);
+    const ext=(file.name.split('.').pop()||'bin').toLowerCase();
+    const path='remitos/'+r.id+'.'+ext;
+    const {error}=await sb.storage.from('productos').upload(path,file,{upsert:true,cacheControl:'3600'});
+    if(error){ setSubiendoAdj(false); alert('No se pudo subir el archivo: '+(error.message||'')); return; }
+    const {data}=sb.storage.from('productos').getPublicUrl(path);
+    const url=data.publicUrl+'?t='+Date.now();
+    await sb.from('stock_remitos').update({adjunto_url:url,adjunto_nombre:file.name}).eq('id',r.id);
+    setR(prev=>({...prev,adjunto_url:url,adjunto_nombre:file.name}));
+    setSubiendoAdj(false);
+  };
+  const quitarAdjunto=async()=>{
+    if(!confirm('¿Quitar el archivo adjunto de este remito?')) return;
+    await sb.from('stock_remitos').update({adjunto_url:null,adjunto_nombre:null}).eq('id',r.id);
+    setR(prev=>({...prev,adjunto_url:null,adjunto_nombre:null}));
+  };
+
   const abrirEdit=()=>{ setHd({evento:r.evento||'',cliente:r.cliente||'',direccion:r.direccion||'',desde:r.fecha_desde||'',hasta:r.fecha_hasta||''}); setEditH(true); };
   const guardarHeader=async()=>{
     const patch={evento:hd.evento.trim()||null,cliente:hd.cliente.trim()||null,direccion:hd.direccion.trim()||null,fecha_desde:hd.desde||null,fecha_hasta:hd.hasta||null};
@@ -1016,6 +1046,21 @@ function RemitoDetalle({remito,showToast,onBack}){
       </div>
       {imprimir&&<RemitoPrint r={r} lineas={lineas} onClose={()=>setImprimir(false)}/>}
 
+      <div className="adj-box">
+        <div className="adj-title">📎 Adjunto (lista / archivo)</div>
+        {r.adjunto_url ?
+          <div className="adj-row">
+            <a href={r.adjunto_url} target="_blank" rel="noopener noreferrer" className="hbtn">📄 {r.adjunto_nombre||'Abrir archivo'}</a>
+            <button className="lin-x" onClick={quitarAdjunto}>Quitar</button>
+          </div>
+          :
+          <label className={'hbtn adj-upload'+(subiendoAdj?' dis':'')}>
+            {subiendoAdj?'Subiendo…':'Adjuntar archivo (PDF / Excel / Word)'}
+            <input type="file" accept=".pdf,.xls,.xlsx,.doc,.docx,.csv" style={{display:'none'}} disabled={subiendoAdj}
+              onChange={e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; subirAdjunto(f); }}/>
+          </label>}
+      </div>
+
       {activo&&
         <div className="scan-box">
           {activo&&
@@ -1067,17 +1112,18 @@ function RemitoDetalle({remito,showToast,onBack}){
          </div>))}</div>}
 
       {activo&&<div className="det-actions">
-        {armando&&<button className="btn-primary wide" onClick={marcarPreparado}>✔ Marcar como preparado</button>}
-        {preparado&&<button className="btn-ghost wide" onClick={volverPreparacion}>↩ Volver a preparación</button>}
-        <button className="btn-ghost wide" style={{marginTop:8}} onClick={cerrarRemito}>Cerrar remito</button>
-        <button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>
+        {armando&&puedeGestion&&<button className="btn-primary wide" onClick={marcarPreparado}>✔ Marcar como preparado</button>}
+        {preparado&&puedeGestion&&<button className="btn-ghost wide" onClick={volverPreparacion}>↩ Volver a preparación</button>}
+        {puedeGestion&&<button className="btn-ghost wide" style={{marginTop:8}} onClick={cerrarRemito}>Cerrar remito</button>}
+        {esGestion&&<button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>}
       </div>}
       {incompleto&&<div className="det-actions">
-        <button className="btn-ghost wide" onClick={reabrirRemito}>↩ Reabrir remito</button>
-        <button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>
+        {puedeGestion&&<button className="btn-ghost wide" onClick={reabrirRemito}>↩ Reabrir remito</button>}
+        {esGestion&&<button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>}
       </div>}
       {r.estado==='cerrado'&&<div className="det-actions">
-        <button className="btn-ghost wide" onClick={reabrirRemito}>↩ Reabrir remito</button>
+        {puedeGestion&&<button className="btn-ghost wide" onClick={reabrirRemito}>↩ Reabrir remito</button>}
+        {esGestion&&<button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito (borrar)</button>}
       </div>}
     </div>
   );
