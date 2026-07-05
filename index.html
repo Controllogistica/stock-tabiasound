@@ -261,6 +261,7 @@
 .hbtn{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;color:#334;cursor:pointer;transition:all .15s}
 .hbtn:hover{border-color:var(--teal);color:var(--teal)}
 .rem-est.e-incompleto{background:#FFEAD5;color:#C2410C}
+.rem-est.e-retrasado{background:#FDECEC;color:#b42318}
 .e-incompleto{background:#FFEAD5;color:#C2410C}
 .lin-badge.lost{font-size:11px;font-weight:700;color:#b42318;background:#FDECEC;padding:5px 10px;border-radius:20px;white-space:nowrap}
 .lin-lost{border:none;background:#FDECEC;color:#b42318;font-weight:700;font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer}
@@ -467,6 +468,12 @@ function columnaDe(r){
   if(hasta && hoy>hasta) return 'devolucion';
   if(desde && hoy>=desde) return 'evento';
   return 'preparacion';
+}
+function chipRemito(r){
+  if(r.estado==='cerrado') return {txt:'Cerrado', cls:'e-cerrado'};
+  if(r.estado==='incompleto') return {txt:'Incompleto', cls:'e-incompleto'};
+  if(columnaDe(r)==='devolucion') return {txt:'Retrasado', cls:'e-retrasado'};
+  return {txt:remEstLabel(r.estado), cls:'e-'+r.estado};
 }
 const fmtFecha=s=>{ try{ return new Date(String(s).length<=10?s+'T00:00:00':s).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}); }catch(e){ return ''; } };
 const fmtRango=(a,b)=>{ if(!a&&!b) return 'sin fechas'; if(a&&b) return fmtFecha(a)+' → '+fmtFecha(b); return fmtFecha(a||b); };
@@ -715,15 +722,17 @@ function Remitos({perfil,showToast,archivados}){
   const load=()=>sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}).limit(100).then(({data})=>setRemitos(data||[]));
   useEffect(()=>{ load(); },[]);
   if(sel) return <RemitoDetalle remito={sel} showToast={showToast} onBack={()=>{setSel(null);load();}}/>;
-  const card=(r)=>(
+  const card=(r)=>{
+    const ch=chipRemito(r);
+    return (
     <div className="rem-card" key={r.id} onClick={()=>setSel(r)}>
       <div className="rem-main">
         <div className="rem-ev">{r.evento||'(sin evento)'}</div>
         <div className="rem-sub">{r.cliente||'—'} · {fmtRango(r.fecha_desde,r.fecha_hasta)}</div>
       </div>
-      <span className={'rem-est e-'+r.estado}>{remEstLabel(r.estado)}</span>
+      <span className={'rem-est '+ch.cls}>{ch.txt}</span>
     </div>
-  );
+  ); };
 
   if(archivados){
     const arch=(remitos||[]).filter(x=>x.estado==='cerrado');
@@ -983,7 +992,7 @@ function RemitoDetalle({remito,showToast,onBack}){
       <div className="det-head">
         <div><div className="rem-ev" style={{fontSize:20}}>{r.evento||'(sin evento)'}</div>
           <div className="rem-sub">{r.cliente||'—'} · {fmtRango(r.fecha_desde,r.fecha_hasta)}</div></div>
-        <span className={'rem-est e-'+r.estado}>{remEstLabel(r.estado)}</span>
+        <span className={'rem-est '+chipRemito(r).cls}>{chipRemito(r).txt}</span>
       </div>
 
       {!editH ?
