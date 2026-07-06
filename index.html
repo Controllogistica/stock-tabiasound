@@ -1161,6 +1161,63 @@ function Shell({perfil,user}){
 const rolLabel=r=>({admin:'Administrador',jefe_area:'Jefe de área',operador:'Operador'}[r]||'Stock');
 
 /* ====== CATALOGO ====== */
+function NuevoProducto({areas,onClose,onCreated}){
+  const [nombre,setNombre]=useState('');
+  const [areaId,setAreaId]=useState('');
+  const [tipo,setTipo]=useState('serializado');
+  const [cantidad,setCantidad]=useState('');
+  const [codGranel,setCodGranel]=useState('');
+  const [precio,setPrecio]=useState('');
+  const [saving,setSaving]=useState(false);
+  const guardar=async()=>{
+    if(!nombre.trim()){ alert('Poné un nombre.'); return; }
+    if(!areaId){ alert('Elegí un área.'); return; }
+    setSaving(true);
+    const ins={
+      empresa_id:EMPRESA_ID, area_id:areaId, nombre:nombre.trim(),
+      tipo_control:tipo, es_kit:false, archivado:false,
+      cantidad_total: tipo==='cantidad' ? (Number(cantidad)||0) : 0,
+      codigo_granel: tipo==='cantidad' ? (codGranel.trim()||null) : null,
+      precio_alquiler: precio===''?null:Number(precio)
+    };
+    const {data,error}=await sb.from('stock_productos').insert(ins).select('id').single();
+    if(error||!data){ setSaving(false); alert('No se pudo crear el producto: '+(error&&error.message||'')); return; }
+    setSaving(false);
+    onCreated(data.id);
+  };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={e=>e.stopPropagation()}>
+        <div className="sheet-head"><div className="t">Nuevo producto</div>
+          <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={onClose}>✕</button></div>
+        <div className="sheet-body">
+          <div className="frow"><label>Nombre</label><input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Ej: Micrófono Shure SM58"/></div>
+          <div className="frow"><label>Área</label>
+            <select value={areaId} onChange={e=>setAreaId(e.target.value)}>
+              <option value="">— Elegí un área —</option>
+              {areas.map(a=><option key={a.id} value={a.id}>{a.nombre}</option>)}
+            </select></div>
+          <div className="frow"><label>Tipo</label>
+            <select value={tipo} onChange={e=>setTipo(e.target.value)}>
+              <option value="serializado">Serializado (con N° de serie)</option>
+              <option value="cantidad">Granel (por cantidad)</option>
+            </select></div>
+          {tipo==='cantidad'&&<div>
+            <div className="frow"><label>Cantidad</label><input type="number" min="0" value={cantidad} onChange={e=>setCantidad(e.target.value)} placeholder="0"/></div>
+            <div className="frow"><label>Código (opcional)</label><input value={codGranel} onChange={e=>setCodGranel(e.target.value)} placeholder="Código de barra / QR"/></div>
+          </div>}
+          <div className="frow"><label>Precio de alquiler ($, opcional)</label><input type="number" min="0" value={precio} onChange={e=>setPrecio(e.target.value)} placeholder="—"/></div>
+          {tipo==='serializado'&&<div className="cam-msg">Se crea sin unidades. Después le agregás las unidades (con sus códigos) y la foto desde el producto.</div>}
+        </div>
+        <div className="save-bar">
+          <button className="btn-ghost" onClick={onClose}>Cancelar</button>
+          <button className="btn-save" disabled={saving} onClick={guardar}>{saving?'Creando…':'Crear producto'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Catalogo({perfil,showToast}){
   const canEdit = perfil.rol_stock==='admin'||perfil.rol_stock==='jefe_area';
   const [areas,setAreas]=useState([]);
@@ -1173,14 +1230,24 @@ function Catalogo({perfil,showToast}){
   const [loading,setLoading]=useState(true);
   const [sel,setSel]=useState(null);
   const [verArchivados,setVerArchivados]=useState(false);
+  const [creando,setCreando]=useState(false);
 
   useEffect(()=>{ sb.from('stock_areas').select('*').order('orden').then(({data})=>setAreas(data||[])); },[]);
   useEffect(()=>{ const t=setTimeout(()=>{setDebounced(search);setPage(0);},300); return ()=>clearTimeout(t); },[search]);
 
   const load=useCallback(async()=>{
     setLoading(true);
+    let extraIds=[];
+    if(debounced){
+      const {data:us}=await sb.from('stock_unidades').select('producto_id').ilike('codigo',`%${debounced}%`).limit(100);
+      extraIds=[...new Set((us||[]).map(u=>u.producto_id).filter(Boolean))];
+    }
     let q=sb.from('vw_stock_productos').select('*',{count:'exact'});
-    if(debounced) q=q.or(`nombre.ilike.%${debounced}%,codigo_granel.ilike.%${debounced}%`);
+    if(debounced){
+      let orp=[`nombre.ilike.%${debounced}%`,`codigo_granel.ilike.%${debounced}%`,`codigo_producto.ilike.%${debounced}%`];
+      if(extraIds.length) orp.push(`id.in.(${extraIds.join(',')})`);
+      q=q.or(orp.join(','));
+    }
     if(areaFilter) q=q.eq('area_id',areaFilter);
     q=q.eq('archivado',verArchivados);
     q=q.order('area_orden',{nullsFirst:false}).order('nombre').range(page*PAGE_SIZE,page*PAGE_SIZE+PAGE_SIZE-1);
@@ -1196,7 +1263,10 @@ function Catalogo({perfil,showToast}){
     <div className="page">
       <div className="page-head">
         <h1>Catálogo</h1>
-        <div className="count">{count.toLocaleString('es-AR')} productos</div>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          {canEdit&&<button className="btn-primary" onClick={()=>setCreando(true)}>+ Nuevo producto</button>}
+          <div className="count">{count.toLocaleString('es-AR')} productos</div>
+        </div>
       </div>
       <div className="search">
         <span className="mag">⌕</span>
@@ -1229,6 +1299,7 @@ function Catalogo({perfil,showToast}){
         </div>}
 
       {sel&&<ProductModal p={sel} areas={areas} canEdit={canEdit} isAdmin={perfil.rol_stock==='admin'} onClose={closeModal}/>}
+      {creando&&<NuevoProducto areas={areas} onClose={()=>setCreando(false)} onCreated={async(id)=>{ setCreando(false); load(); const {data}=await sb.from('vw_stock_productos').select('*').eq('id',id).maybeSingle(); if(data) setSel(data); }}/>}
     </div>
   );
 }
