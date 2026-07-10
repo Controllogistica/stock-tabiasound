@@ -1511,7 +1511,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
 
   const pasarAGranel=async()=>{
     const n=(units||[]).length;
-    if(!confirm('Pasar a GRANEL: se archivan los '+n+' códigos individuales (se pueden recuperar) y queda solo la cantidad ('+n+'). ¿Seguir?')) return;
+    if(!confirm('⚠️ ATENCIÓN\n\nPasar a GRANEL archiva las '+n+' unidad(es) con sus códigos individuales: dejan de verse y el producto pasa a manejarse solo por cantidad ('+n+').\n\nSe pueden recuperar volviendo a Serializado.\n\n¿Seguro que querés convertir a GRANEL?')) return;
     setBusyTipo(true);
     await sb.from('stock_unidades').update({activo:false}).eq('producto_id',p.id).eq('activo',true);
     const {error}=await sb.from('stock_productos').update({tipo_control:'cantidad',cantidad_total:n}).eq('id',p.id);
@@ -1520,12 +1520,19 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
     setBusyTipo(false); mark(); setTipo('cantidad'); setCantidad(n);
   };
   const pasarASerial=async()=>{
-    if(!confirm('Pasar a SERIALIZADO: vas a cargar el código de cada aparato (uno por uno o escaneando). ¿Seguir?')) return;
+    if(!confirm('Pasar a SERIALIZADO: el producto se maneja por unidad, cada una con su código. ¿Seguir?')) return;
     setBusyTipo(true);
     const {error}=await sb.from('stock_productos').update({tipo_control:'serializado'}).eq('id',p.id);
     if(error){ setBusyTipo(false); alert('No se pudo cambiar el tipo.'); return; }
-    await logHist({producto_id:p.id,accion:'cambio_tipo',detalle:'Granel → Serializado'});
-    setBusyTipo(false); mark(); setTipo('serializado'); setNewCode(''); setAdding(true);
+    const {count:inact}=await sb.from('stock_unidades').select('id',{count:'exact',head:true}).eq('producto_id',p.id).eq('activo',false);
+    let react=0;
+    if(inact && confirm('Este producto tiene '+inact+' unidad(es) archivada(s) de antes (con sus códigos).\n\n¿Querés reactivarlas?')){
+      await sb.from('stock_unidades').update({activo:true}).eq('producto_id',p.id).eq('activo',false);
+      react=inact;
+    }
+    await logHist({producto_id:p.id,accion:'cambio_tipo',detalle:'Granel → Serializado'+(react?(' · reactivó '+react+' u.'):'')});
+    setBusyTipo(false); mark(); setTipo('serializado'); setNewCode('');
+    if(react){ reloadUnits(); } else { setAdding(true); }
   };
 
   const archivar=async()=>{
