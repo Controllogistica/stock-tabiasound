@@ -263,6 +263,10 @@
 .lote .btn-save{margin-top:8px;width:100%}
 .hbtn{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;color:#334;cursor:pointer;transition:all .15s}
 .hbtn:hover{border-color:var(--teal);color:var(--teal)}
+.quit-box{margin-top:10px;border-top:1px dashed var(--line);padding-top:6px}
+.u-row.quit{opacity:.75;background:#FAFAFB}
+.u-row.quit .c{text-decoration:line-through;color:var(--muted)}
+.est.quitada{background:#F1F3F5;color:#6B7280;font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px}
 .adj-box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}
 .adj-title{font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
 .adj-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -1460,9 +1464,13 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
   const empresaId=p.empresa_id;
   const archivado=p.archivado;
 
+  const [verQuitadas,setVerQuitadas]=useState(false);
+  const [quitadas,setQuitadas]=useState([]);
   const reloadUnits=useCallback(()=>{
     sb.from('stock_unidades').select('id,codigo,nro_serie_fabricante,estado,observacion')
       .eq('producto_id',p.id).eq('activo',true).order('codigo').then(({data})=>setUnits(data||[]));
+    sb.from('stock_unidades').select('id,codigo,nro_serie_fabricante,estado,observacion')
+      .eq('producto_id',p.id).eq('activo',false).order('codigo').then(({data})=>setQuitadas(data||[]));
   },[p.id]);
 
   useEffect(()=>{ sb.auth.getUser().then(({data})=>setUserId(data.user?data.user.id:null)); },[]);
@@ -1487,6 +1495,20 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
     if(error){ setUploading(false); alert('No se pudo subir la imagen.'); return; }
     const {data}=sb.storage.from('productos').getPublicUrl(path);
     setImg(data.publicUrl+'?t='+Date.now()); setUploading(false);
+  };
+
+  const restaurarUnidad=async(u)=>{
+    const {error}=await sb.from('stock_unidades').update({activo:true}).eq('id',u.id);
+    if(error){ alert('No se pudo restaurar la unidad.'); return; }
+    await logHist({unidad_id:u.id,producto_id:p.id,accion:'restaurar_unidad',detalle:'Restaurada: '+(u.codigo||'')});
+    mark(); reloadUnits();
+  };
+  const borrarUnidad=async(u)=>{
+    if(!confirm('⚠️ BORRAR DEFINITIVO\n\nSe elimina la unidad "'+(u.codigo||'')+'" para siempre. Esto NO se puede deshacer.\n\n¿Seguro?')) return;
+    await sb.from('stock_historial').update({unidad_id:null}).eq('unidad_id',u.id);
+    const {error}=await sb.from('stock_unidades').delete().eq('id',u.id);
+    if(error){ alert('No se pudo borrar la unidad. Puede estar usada en un remito.'); return; }
+    mark(); reloadUnits();
   };
 
   const guardarBasicos=async()=>{
@@ -1613,6 +1635,29 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
                   <div style={{padding:'10px 12px',fontSize:13,color:'var(--muted)'}}>Todavía no hay unidades cargadas.</div>:
                   units.map(u=><UnitRow key={u.id} u={u} canEdit={canEdit} logHist={logHist} onChanged={()=>{mark();reloadUnits();}}/>)}
                </div>}
+
+              {canEdit&&quitadas.length>0&&
+                <div className="quit-box">
+                  <label className="arch-toggle" style={{margin:'6px 0'}}>
+                    <input type="checkbox" checked={verQuitadas} onChange={e=>setVerQuitadas(e.target.checked)}/>
+                    Ver unidades quitadas ({quitadas.length})
+                  </label>
+                  {verQuitadas&&
+                    <div className="units">
+                      {quitadas.map(u=>(
+                        <div className="u-row quit" key={u.id}>
+                          <div className="u-head" style={{cursor:'default'}}>
+                            <span className="c">{u.codigo||'(sin código)'}</span>
+                            <span className="est quitada">Quitada</span>
+                            <div style={{display:'flex',gap:6,marginLeft:'auto'}}>
+                              <button className="lin-dev" onClick={()=>restaurarUnidad(u)}>Restaurar</button>
+                              {isAdmin&&<button className="lin-lost" onClick={()=>borrarUnidad(u)}>Borrar</button>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>}
+                </div>}
               {canEdit&&(adding?
                 <div className="addunit">
                   <div className="row">
