@@ -1576,6 +1576,23 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
     await logHist({producto_id:p.id,accion:'restaurado',detalle:'Restaurado'});
     setSaving(false); mark(); onClose(true);
   };
+  const borrarProducto=async()=>{
+    setSaving(true);
+    const {count:enRem}=await sb.from('stock_remito_lineas').select('*',{count:'exact',head:true}).eq('producto_id',p.id);
+    let enKit=0, enPed=0;
+    try{ const r=await sb.from('stock_kit_componentes').select('*',{count:'exact',head:true}).eq('componente_producto_id',p.id); enKit=r.count||0; }catch(e){}
+    try{ const r=await sb.from('alq_pedido_items').select('*',{count:'exact',head:true}).eq('producto_id',p.id); enPed=r.count||0; }catch(e){}
+    if((enRem||0)>0||enKit>0||enPed>0){
+      setSaving(false);
+      alert('No se puede eliminar: este producto está usado en '+[((enRem||0)>0?'remitos':null),(enKit>0?'kits':null),(enPed>0?'pedidos de alquiler':null)].filter(Boolean).join(' / ')+'.\n\nQueda archivado para no romper esos registros.');
+      return;
+    }
+    if(!confirm('⚠️ ELIMINAR PARA SIEMPRE\n\nSe borra el producto "'+(p.nombre||'')+'" y todas sus unidades. NO se puede deshacer.\n\n¿Seguro?')){ setSaving(false); return; }
+    await sb.from('stock_historial').update({producto_id:null}).eq('producto_id',p.id);
+    const {error}=await sb.from('stock_productos').delete().eq('id',p.id);
+    if(error){ setSaving(false); alert('No se pudo eliminar el producto: '+(error.message||'')); return; }
+    setSaving(false); mark(); onClose(true);
+  };
 
   return (
     <div className="overlay" onClick={close}>
@@ -1689,9 +1706,9 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
 
           {canEdit&&
             <div className="danger-zone">
-              {archivado?
-                <button className="btn-save" disabled={saving} onClick={restaurar} style={{flex:1}}>Restaurar producto</button>
-                :<button className="btn-danger" disabled={saving} onClick={archivar} style={{flex:1}}>Archivar producto</button>}
+              {!archivado&&<button className="btn-danger" disabled={saving} onClick={archivar} style={{flex:1}}>Archivar producto</button>}
+              {archivado&&<button className="btn-save" disabled={saving} onClick={restaurar} style={{flex:1}}>Restaurar producto</button>}
+              {archivado&&isAdmin&&<button className="btn-danger" disabled={saving} onClick={borrarProducto} style={{flex:1}}>Eliminar para siempre</button>}
             </div>}
         </div>
 
