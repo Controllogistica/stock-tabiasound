@@ -733,7 +733,8 @@ function Remitos({perfil,showToast,archivados}){
   const [sel,setSel]=useState(null);
   const [creating,setCreating]=useState(false);
   const load=()=>sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}).limit(100).then(({data})=>setRemitos(data||[]));
-  useEffect(()=>{ load(); },[]);
+  useEffect(()=>{ load(); },[])
+  useEffect(()=>{ var rid=new URLSearchParams(window.location.search).get('remito'); if(rid){ sb.from('stock_remitos').select('*').eq('id',rid).maybeSingle().then(function(res){ if(res.data) setSel(res.data); }); } },[]);
   if(sel) return <RemitoDetalle remito={sel} perfil={perfil} showToast={showToast} onBack={()=>{setSel(null);load();}}/>;
   const card=(r)=>{
     const ch=chipRemito(r);
@@ -1138,7 +1139,7 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
 
 function Shell({perfil,user}){
   const isAdmin = perfil.rol_stock==='admin';
-  const [tab,setTab]=useState('catalogo');
+  const [tab,setTab]=useState(new URLSearchParams(window.location.search).get('remito')?'remitos':'catalogo');
   const [toast,setToast]=useState('');
   const showToast=m=>{setToast(m);setTimeout(()=>setToast(''),2200);};
   const nombre=(perfil.nombre||user.email||'').split(' ')[0];
