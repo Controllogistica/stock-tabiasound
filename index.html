@@ -825,6 +825,9 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   const isAdmin = !!(perfil && perfil.rol_stock==='admin');
   const esGestion = !!(perfil && (perfil.rol_stock==='admin'||perfil.rol_stock==='jefe_area'));
   const [r,setR]=useState(remito);
+  const [adjuntos,setAdjuntos]=useState([]);
+  const cargarAdjuntos=async()=>{ const res=await sb.from('stock_remito_adjuntos').select('*').eq('remito_id',remito.id).order('creado_en'); setAdjuntos(res.data||[]); };
+  useEffect(()=>{ cargarAdjuntos(); },[]);
   const esPropio = !!(perfil && perfil.id && r.creado_por && perfil.id===r.creado_por);
   const puedeGestion = esGestion || esPropio;
   const [lineas,setLineas]=useState(null);
@@ -957,24 +960,8 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
     if(showToast) showToast('Remito descartado');
     onBack();
   };
-  const subirAdjunto=async(file)=>{
-    if(!file) return;
-    setSubiendoAdj(true);
-    const ext=(file.name.split('.').pop()||'bin').toLowerCase();
-    const path='remitos/'+r.id+'.'+ext;
-    const {error}=await sb.storage.from('productos').upload(path,file,{upsert:true,cacheControl:'3600'});
-    if(error){ setSubiendoAdj(false); alert('No se pudo subir el archivo: '+(error.message||'')); return; }
-    const {data}=sb.storage.from('productos').getPublicUrl(path);
-    const url=data.publicUrl+'?t='+Date.now();
-    await sb.from('stock_remitos').update({adjunto_url:url,adjunto_nombre:file.name}).eq('id',r.id);
-    setR(prev=>({...prev,adjunto_url:url,adjunto_nombre:file.name}));
-    setSubiendoAdj(false);
-  };
-  const quitarAdjunto=async()=>{
-    if(!confirm('¿Quitar el archivo adjunto de este remito?')) return;
-    await sb.from('stock_remitos').update({adjunto_url:null,adjunto_nombre:null}).eq('id',r.id);
-    setR(prev=>({...prev,adjunto_url:null,adjunto_nombre:null}));
-  };
+  const subirAdjunto=async(file)=>{ if(!file) return; setSubiendoAdj(true); const ext=(file.name.split('.').pop()||'bin').toLowerCase(); const path='remitos/'+r.id+'/'+Date.now()+'.'+ext; const up=await sb.storage.from('productos').upload(path,file,{upsert:true,cacheControl:'3600'}); if(up.error){ setSubiendoAdj(false); alert('No se pudo subir el archivo ('+up.error.message+')'); return; } const pu=sb.storage.from('productos').getPublicUrl(path); const url=pu.data.publicUrl; const ins=await sb.from('stock_remito_adjuntos').insert({remito_id:r.id,url:url,nombre:file.name,path:path}); if(ins.error){ setSubiendoAdj(false); alert('No se pudo guardar el adjunto ('+ins.error.message+')'); return; } await cargarAdjuntos(); setSubiendoAdj(false); };
+  const quitarAdjunto=async(adjId)=>{ if(!confirm('¿Quitar este archivo adjunto?')) return; const del=await sb.from('stock_remito_adjuntos').delete().eq('id',adjId); if(del&&del.error){ alert('No se pudo quitar ('+del.error.message+')'); return; } await cargarAdjuntos(); };
 
   const abrirEdit=()=>{ setHd({evento:r.evento||'',cliente:r.cliente||'',direccion:r.direccion||'',desde:r.fecha_desde||'',hasta:r.fecha_hasta||''}); setEditH(true); };
   const guardarHeader=async()=>{
@@ -1062,6 +1049,7 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
             <button className="lin-x" onClick={quitarAdjunto}>Quitar</button>
           </div>
           :
+          {adjuntos.map(function(a){ return (<div className="adj-row" key={a.id}><a href={a.url} target="_blank" rel="noopener noreferrer" className="hbtn">📎 {a.nombre||'Abrir archivo'}</a><button className="lin-x" onClick={function(){ quitarAdjunto(a.id); }}>Quitar</button></div>); })}
           <label className={'hbtn adj-upload'+(subiendoAdj?' dis':'')}>
             {subiendoAdj?'Subiendo…':'Adjuntar archivo (PDF / Excel / Word)'}
             <input type="file" accept=".pdf,.xls,.xlsx,.doc,.docx,.csv" style={{display:'none'}} disabled={subiendoAdj}
