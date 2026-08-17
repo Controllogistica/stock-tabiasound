@@ -1045,8 +1045,8 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
         <div className="adj-title">📎 Adjunto (lista / archivo)</div>
         {adjuntos.map(function(a){ return (<div className="adj-row" key={a.id}><a href={a.url} target="_blank" rel="noopener noreferrer" className="hbtn">📎 {a.nombre||'Abrir archivo'}</a><button className="lin-x" onClick={function(){ quitarAdjunto(a.id); }}>Quitar</button></div>); })}
           <label className={'hbtn adj-upload'+(subiendoAdj?' dis':'')}>
-            {subiendoAdj?'Subiendo…':'Adjuntar archivo (PDF / Excel / Word)'}
-            <input type="file" accept=".pdf,.xls,.xlsx,.doc,.docx,.csv" style={{display:'none'}} disabled={subiendoAdj}
+            {subiendoAdj?'Subiendo…':'Adjuntar archivo o foto'}
+            <input type="file" accept=".pdf,.xls,.xlsx,.doc,.docx,.csv,.jpg,.jpeg,.png,.heic,.webp,image/*" style={{display:'none'}} disabled={subiendoAdj}
               onChange={e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; subirAdjunto(f); }}/>
           </label>
       </div>
