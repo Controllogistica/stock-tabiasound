@@ -825,7 +825,7 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   const isAdmin = !!(perfil && perfil.rol_stock==='admin');
   const esGestion = !!(perfil && (perfil.rol_stock==='admin'||perfil.rol_stock==='jefe_area'));
   const [r,setR]=useState(remito);
-  const [adjuntos,setAdjuntos]=useState([]);
+  const [adjuntos,setAdjuntos]=useState([]); const [preview,setPreview]=useState(null);
   const cargarAdjuntos=async()=>{ const res=await sb.from('stock_remito_adjuntos').select('*').eq('remito_id',remito.id).order('creado_en'); setAdjuntos(res.data||[]); };
   useEffect(()=>{ cargarAdjuntos(); },[]);
   const esPropio = !!(perfil && perfil.id && r.creado_por && perfil.id===r.creado_por);
@@ -1043,7 +1043,8 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
 
       <div className="adj-box">
         <div className="adj-title">📎 Adjunto (lista / archivo)</div>
-        {adjuntos.map(function(a){ return (<div className="adj-row" key={a.id}><a href={a.url} target="_blank" rel="noopener noreferrer" className="hbtn" style={{display:'inline-flex',alignItems:'center',gap:'8px'}}>{(/\.(jpg|jpeg|png|heic|webp|gif)$/i).test(a.nombre||'')?<img src={a.url} alt="" style={{width:42,height:42,objectFit:'cover',borderRadius:6,border:'1px solid #ddd'}}/>:'📎 '}{a.nombre||'Abrir archivo'}</a><button className="lin-x" onClick={function(){ quitarAdjunto(a.id); }}>Quitar</button></div>); })}
+        {adjuntos.map(function(a){ return (<div className="adj-row" key={a.id}><a href={a.url} target="_blank" rel="noopener noreferrer" className="hbtn" style={{display:'inline-flex',alignItems:'center',gap:'8px',cursor:'pointer'}} onClick={function(ev){ ev.preventDefault(); setPreview(a); }}>{(/\.(jpg|jpeg|png|heic|webp|gif)$/i).test(a.nombre||'')?<img src={a.url} alt="" style={{width:42,height:42,objectFit:'cover',borderRadius:6,border:'1px solid #ddd'}}/>:'📎 '}{a.nombre||'Abrir archivo'}</a><button className="lin-x" onClick={function(){ quitarAdjunto(a.id); }}>Quitar</button></div>); })}
+          {preview&&(<div className="overlay" onClick={function(){ setPreview(null); }}><div className="sheet" onClick={function(e){ e.stopPropagation(); }} style={{maxWidth:560,width:'92vw'}}><div style={{fontWeight:600,marginBottom:8,wordBreak:'break-all'}}>{preview.nombre||'Adjunto'}</div>{(/\.(jpg|jpeg|png|heic|webp|gif)$/i).test(preview.nombre||'')?<img src={preview.url} alt="" style={{maxWidth:'100%',maxHeight:'62vh',borderRadius:8,display:'block',margin:'0 auto'}}/>:<div className="muted" style={{padding:'14px 0'}}>Este archivo no tiene vista previa. Tocá "Abrir" para verlo.</div>}<div style={{display:'flex',gap:8,marginTop:14,justifyContent:'flex-end'}}><a href={preview.url} target="_blank" rel="noopener noreferrer" className="hbtn">Abrir</a><button className="lin-x" onClick={function(){ setPreview(null); }}>Cerrar</button></div></div></div>)}
           <label className={'hbtn adj-upload'+(subiendoAdj?' dis':'')}>
             {subiendoAdj?'Subiendo…':'Adjuntar archivo o foto'}
             <input type="file" accept=".pdf,.xls,.xlsx,.doc,.docx,.csv,.jpg,.jpeg,.png,.heic,.webp,image/*" style={{display:'none'}} disabled={subiendoAdj}
