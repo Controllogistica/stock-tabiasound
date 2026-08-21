@@ -1019,12 +1019,25 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
 
   const resolverLinea=async(l,tipo)=>{
     const estadoUnidad = tipo==='perdido' ? 'perdido' : 'disponible';
-    await sb.from('stock_remito_lineas').update({devuelto:true,fecha_devolucion:new Date().toISOString()}).eq('id',l.id);
-    if(l.unidad_id){
-      await sb.from('stock_unidades').update({estado:estadoUnidad}).eq('id',l.unidad_id);
-      await logHist({unidad_id:l.unidad_id,accion:tipo==='perdido'?'perdido':'devolucion',detalle:(tipo==='perdido'?'Marcado PERDIDO':'Devolución tardía')+' — '+(r.evento||'remito')});
+    if(!l.unidad_id && tipo==='perdido'){
+      const _rest=(Number(l.cantidad)||0)-(Number(l.cantidad_devuelta)||0);
+      if(_rest<=0){ loadLineas(); return; }
+      const _q=Number(prompt('¿Cuántos "'+(l._p?l._p.nombre:'')+'" se perdieron? (de '+_rest+')', String(_rest)));
+      if(!(_q>0)){ return; }
+      const _perd=Math.min(_q,_rest);
+      const _pr=await sb.from('stock_productos').select('cantidad_total').eq('id',l.producto_id).single();
+      const _cur=(_pr.data&&Number(_pr.data.cantidad_total))||0;
+      await sb.from('stock_productos').update({cantidad_total:Math.max(_cur-_perd,0)}).eq('id',l.producto_id);
+      await sb.from('stock_remito_lineas').update({devuelto:true,fecha_devolucion:new Date().toISOString(),cantidad_devuelta:(Number(l.cantidad)||0)-_perd}).eq('id',l.id);
+      await logHist({producto_id:l.producto_id,accion:'perdido',detalle:'Perdido: '+_perd+' — '+(r.evento||'remito')});
     } else {
-      await logHist({producto_id:l.producto_id,accion:tipo==='perdido'?'perdido':'devolucion',detalle:(tipo==='perdido'?'Marcado PERDIDO':'Devolución tardía')+' — '+(r.evento||'remito')});
+      await sb.from('stock_remito_lineas').update({devuelto:true,fecha_devolucion:new Date().toISOString()}).eq('id',l.id);
+      if(l.unidad_id){
+        await sb.from('stock_unidades').update({estado:estadoUnidad}).eq('id',l.unidad_id);
+        await logHist({unidad_id:l.unidad_id,accion:tipo==='perdido'?'perdido':'devolucion',detalle:(tipo==='perdido'?'Marcado PERDIDO':'Devolución tardía')+' — '+(r.evento||'remito')});
+      } else {
+        await logHist({producto_id:l.producto_id,accion:'devolucion',detalle:'Devolución tardía — '+(r.evento||'remito')});
+      }
     }
     const restantes=(lineas||[]).filter(x=>x.id!==l.id && !x.devuelto).length;
     if(restantes===0 && (r.estado==='incompleto'||r.estado==='cerrado')){
@@ -1118,7 +1131,7 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
              : (incompleto||r.estado==='cerrado')
                ? <div className="lin-acts">
                    <button className="lin-dev" onClick={()=>resolverLinea(l,'devuelto')}>Devuelto</button>
-                   {l.unidad_id&&<button className="lin-lost" onClick={()=>{ if(confirm('¿Marcar como PERDIDO? La unidad va a quedar como perdida (no disponible).')) resolverLinea(l,'perdido'); }}>Perdido</button>}
+                   {<button className="lin-lost" onClick={()=>{ if(l.unidad_id ? confirm('¿Marcar como PERDIDO? La unidad va a quedar como perdida (no disponible).') : true) resolverLinea(l,'perdido'); }}>Perdido</button>}
                  </div>
                : <div className="lin-acts">
                    <button className="lin-x" onClick={()=>quitarLinea(l)}>Quitar</button>
