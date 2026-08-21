@@ -486,6 +486,22 @@ function columnaDe(r){
   if(desde && hoy>=desde) return 'evento';
   return 'preparacion';
 }
+function _rangoPeriodo(tipo){
+  var d=new Date(); var y=d.getFullYear(), m=d.getMonth();
+  var f=function(x){ return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); };
+  if(tipo==='hoy'){ var t=todayStr(); return [t,t]; }
+  if(tipo==='semana'){ var dow=(d.getDay()+6)%7; var lun=new Date(d); lun.setDate(d.getDate()-dow); var dom=new Date(lun); dom.setDate(lun.getDate()+6); return [f(lun),f(dom)]; }
+  if(tipo==='mes'){ return [f(new Date(y,m,1)), f(new Date(y,m+1,0))]; }
+  return null;
+}
+function pasaFiltroFecha(r,tipo){
+  if(!tipo||tipo==='todos') return true;
+  if(tipo==='retrasado') return columnaDe(r)==='devolucion';
+  var rango=_rangoPeriodo(tipo); if(!rango) return true;
+  var desde=r.fecha_desde||r.fecha_hasta, hasta=r.fecha_hasta||r.fecha_desde;
+  if(!desde&&!hasta) return false;
+  return desde<=rango[1] && hasta>=rango[0];
+}
 function chipRemito(r){
   if(r.estado==='cerrado') return {txt:'Cerrado', cls:'e-cerrado'};
   if(r.estado==='incompleto') return {txt:'Incompleto', cls:'e-incompleto'};
@@ -736,6 +752,7 @@ function Remitos({perfil,showToast,archivados}){
   const [remitos,setRemitos]=useState(null);
   const [sel,setSel]=useState(null);
   const [creating,setCreating]=useState(false); const [areaFiltro,setAreaFiltro]=useState('all');
+  const [fechaFiltro,setFechaFiltro]=useState('todos');
   const load=()=>sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}).limit(100).then(({data})=>setRemitos(data||[]));
   useEffect(()=>{ load(); },[])
   useEffect(()=>{ var rid=new URLSearchParams(window.location.search).get('remito'); if(rid){ sb.from('stock_remitos').select('*').eq('id',rid).maybeSingle().then(function(res){ if(res.data) setSel(res.data); }); } },[]);
@@ -764,7 +781,8 @@ function Remitos({perfil,showToast,archivados}){
     );
   }
 
-  const activos=(remitos||[]).filter(x=>x.estado!=='cerrado' && (areaFiltro==='all'||x.area===areaFiltro));
+  const activos=(remitos||[]).filter(x=>x.estado!=='cerrado' && (areaFiltro==='all'||x.area===areaFiltro) && pasaFiltroFecha(x,fechaFiltro));
+  const nRetras=(remitos||[]).filter(x=>x.estado!=='cerrado' && (areaFiltro==='all'||x.area===areaFiltro) && columnaDe(x)==='devolucion').length;
   const col={preparacion:[],evento:[],devolucion:[]};
   activos.forEach(x=>{ const c=columnaDe(x); if(col[c]) col[c].push(x); });
   const columnas=[{key:'preparacion',tit:'Preparación'},{key:'evento',tit:'En Evento'},{key:'devolucion',tit:'Devolución'}];
@@ -773,6 +791,7 @@ function Remitos({perfil,showToast,archivados}){
       <div className="page-head"><h1 className="ph-title">Remitos</h1>
         <button className="btn-primary" onClick={()=>setCreating(true)}>+ Nuevo</button></div>
       <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',margin:'0 0 14px'}}><span style={{fontSize:12,color:'#888',marginRight:2}}>Área</span>{[{k:'all',n:'Todas',c:null},{k:'sonido',n:'Sonido',c:'#EF7D22'},{k:'iluminacion',n:'Iluminación',c:'#E5322B'},{k:'video',n:'Video',c:'#6B4F2A'},{k:'generacion',n:'Generación',c:'#0B7A3B'},{k:'escenario',n:'Escenario',c:'#8E44AD'},{k:'produccion',n:'Producción',c:'#D6337A'},{k:'logistica',n:'Logística',c:'#F1C40F'},{k:'inalambricos',n:'Inalámbricos',c:'#12B0C4'}].map(function(f){ return (<button key={f.k} type="button" onClick={function(){ setAreaFiltro(f.k); }} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:999,border:areaFiltro===f.k?'1px solid #111':'1px solid #d0d0d0',background:areaFiltro===f.k?'#111':'#fff',color:areaFiltro===f.k?'#fff':'#555',fontSize:13,cursor:'pointer'}}>{f.c?<span style={{width:9,height:9,borderRadius:'50%',background:f.c,display:'inline-block'}}></span>:null}{f.n}</button>); })}</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',margin:'0 0 14px'}}><span style={{fontSize:12,color:'#888',marginRight:2}}>Fecha</span>{[{k:'todos',n:'Todos'},{k:'hoy',n:'Hoy'},{k:'semana',n:'Esta semana'},{k:'mes',n:'Este mes'}].map(function(f){ return (<button key={f.k} type="button" onClick={function(){ setFechaFiltro(f.k); }} style={{padding:'6px 12px',borderRadius:999,border:'1px solid '+(fechaFiltro===f.k?'#111':'#ddd'),background:fechaFiltro===f.k?'#111':'#fff',color:fechaFiltro===f.k?'#fff':'#555',fontSize:13,cursor:'pointer'}}>{f.n}</button>); })}<button type="button" onClick={function(){ setFechaFiltro(fechaFiltro==='retrasado'?'todos':'retrasado'); }} style={{padding:'6px 12px',borderRadius:999,border:'1px solid '+(fechaFiltro==='retrasado'?'#a82626':'#f0c9c9'),background:fechaFiltro==='retrasado'?'#a82626':'#FBEAEA',color:fechaFiltro==='retrasado'?'#fff':'#a82626',fontSize:13,cursor:'pointer',fontWeight:600}}>{'Retrasado ('+nRetras+')'}</button></div>
           {remitos===null?<div className="spinner"/>:
        <div className="kanban">
          {columnas.map(cc=>(
