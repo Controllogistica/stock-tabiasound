@@ -807,14 +807,14 @@ function Remitos({perfil,showToast,archivados}){
 }
 
 function NuevoRemito({onClose,onCreated}){
-  const [f,setF]=useState({evento:'',cliente:'',desde:'',hasta:'',obs:'',direccion:''});
+  const [f,setF]=useState({evento:'',cliente:'',desde:'',hasta:'',obs:'',direccion:'',area:'inalambricos'});
   const [saving,setSaving]=useState(false);
   const set=(k,v)=>setF(o=>{const n={...o};n[k]=v;return n;});
   const crear=async()=>{
     if(!f.evento.trim()){ alert('Poné al menos el nombre del evento.'); return; }
     setSaving(true);
     const {data,error}=await sb.from('stock_remitos').insert({
-      empresa_id:EMPRESA_ID, evento:f.evento.trim(), cliente:f.cliente.trim()||null,
+      empresa_id:EMPRESA_ID, evento:f.evento.trim(), area:f.area||'inalambricos', cliente:f.cliente.trim()||null,
       fecha_desde:f.desde||null, fecha_hasta:f.hasta||null, observacion:f.obs.trim()||null, direccion:f.direccion.trim()||null, estado:'pendiente'
     }).select().single();
     setSaving(false);
@@ -828,7 +828,7 @@ function NuevoRemito({onClose,onCreated}){
           <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={onClose}>✕</button></div>
         <div className="sheet-body">
           <div className="frow"><label>Evento</label><input value={f.evento} onChange={e=>set('evento',e.target.value)} placeholder="Ej: Show Luna Park"/></div>
-          <div className="frow"><label>Cliente</label><input value={f.cliente} onChange={e=>set('cliente',e.target.value)}/></div>
+          <div className="frow"><label>Cliente</label><input value={f.cliente} onChange={e=>set('cliente',e.target.value)}/></div><div className="frow"><label>Área</label><select value={f.area} onChange={e=>set('area',e.target.value)}>{[['sonido','Sonido'],['iluminacion','Iluminación'],['video','Video'],['generacion','Generación'],['escenario','Escenario'],['produccion','Producción'],['logistica','Logística'],['inalambricos','Inalámbricos']].map(o=><option key={o[0]} value={o[0]}>{o[1]}</option>)}</select></div>
           <div className="frow"><label>Dirección</label><input value={f.direccion} onChange={e=>set('direccion',e.target.value)} placeholder="Lugar de entrega (opcional)"/></div>
           <div className="grid2">
             <div className="frow"><label>Desde</label><input type="date" value={f.desde} onChange={e=>set('desde',e.target.value)}/></div>
