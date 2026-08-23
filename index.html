@@ -752,7 +752,7 @@ function Remitos({perfil,showToast,archivados}){
   const [remitos,setRemitos]=useState(null);
   const [sel,setSel]=useState(null);
   const [creating,setCreating]=useState(false); const [areaFiltro,setAreaFiltro]=useState('all');
-  const [fechaFiltro,setFechaFiltro]=useState('todos');
+  const [fechaFiltro,setFechaFiltro]=useState(new URLSearchParams(window.location.search).get('remito')==='hoy'?'hoy':'todos');
   const load=()=>sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}).limit(100).then(({data})=>setRemitos(data||[]));
   useEffect(()=>{ load(); },[])
   useEffect(()=>{ var rid=new URLSearchParams(window.location.search).get('remito'); if(rid){ sb.from('stock_remitos').select('*').eq('id',rid).maybeSingle().then(function(res){ if(res.data) setSel(res.data); }); } },[]);
