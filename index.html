@@ -892,8 +892,9 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   const refocus=()=>{ if(inputRef.current) inputRef.current.focus(); };
   const aviso=m=>{ if(showToast) showToast(m); else alert(m); };
 
+  const _cesc=x=>String(x==null?'':x).replace(/[%_\\]/g,function(m){return '\\'+m;});
   const scanSalida=async(c)=>{
-    const {data:u}=await sb.from('stock_unidades').select('id,codigo,estado,producto_id,activo').eq('codigo',c).eq('activo',true).maybeSingle();
+    const {data:u}=await sb.from('stock_unidades').select('id,codigo,estado,producto_id,activo').ilike('codigo',_cesc(c)).eq('activo',true).limit(1).maybeSingle();
     if(u){
       if(u.estado==='en_evento'){ aviso('Ya en un evento: '+c); return; }
       await sb.from('stock_remito_lineas').insert({remito_id:r.id,unidad_id:u.id,producto_id:u.producto_id,cantidad:1,fecha_salida:new Date().toISOString()});
@@ -902,8 +903,8 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
       loadLineas(); return;
     }
     let p=null;
-    const r1=await sb.from('stock_productos').select('id,nombre,codigo_granel,codigo_producto').eq('codigo_granel',c).maybeSingle(); p=r1.data;
-    if(!p){ const r2=await sb.from('stock_productos').select('id,nombre,codigo_granel,codigo_producto').eq('codigo_producto',c).maybeSingle(); p=r2.data; }
+    const r1=await sb.from('stock_productos').select('id,nombre,codigo_granel,codigo_producto').ilike('codigo_granel',_cesc(c)).limit(1).maybeSingle(); p=r1.data;
+    if(!p){ const r2=await sb.from('stock_productos').select('id,nombre,codigo_granel,codigo_producto').ilike('codigo_producto',_cesc(c)).limit(1).maybeSingle(); p=r2.data; }
     if(p){
       const qty=Number(prompt('Cantidad de "'+p.nombre+'" a sacar:','1'))||0;
       if(qty>0){
@@ -934,8 +935,8 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
     loadLineas();
   };
   const scanDevolucion=async(c)=>{
-    let l=(lineas||[]).find(x=>x._u&&x._u.codigo===c&&!x.devuelto);
-    if(!l) l=(lineas||[]).find(x=>!x.unidad_id&&x._p&&x._p.codigo_granel===c&&!x.devuelto);
+    let l=(lineas||[]).find(x=>x._u&&String(x._u.codigo||'').toUpperCase()===c.toUpperCase()&&!x.devuelto);
+    if(!l) l=(lineas||[]).find(x=>!x.unidad_id&&x._p&&String(x._p.codigo_granel||'').toUpperCase()===c.toUpperCase()&&!x.devuelto);
     if(!l){ aviso('No está pendiente de devolución: '+c); return; }
     await devolverLinea(l);
   };
