@@ -1206,7 +1206,8 @@ function NuevoProducto({areas,onClose,onCreated}){
       tipo_control:tipo, es_kit:false, archivado:false,
       cantidad_total: tipo==='cantidad' ? (Number(cantidad)||0) : 0,
       codigo_granel: tipo==='cantidad' ? (codGranel.trim()||null) : null,
-      precio_alquiler: precio===''?null:Number(precio)
+      precio_alquiler: precio===''?null:Number(precio),
+      precio_servicio: precio===''?null:Number(precio)
     };
     const {data,error}=await sb.from('stock_productos').insert(ins).select('id').single();
     if(error||!data){ setSaving(false); alert('No se pudo crear el producto: '+(error&&error.message||'')); return; }
@@ -1470,6 +1471,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
   const [cantidad,setCantidad]=useState(p.cantidad_total||0);
   const [img,setImg]=useState(p.imagen_url||'');
   const [precio,setPrecio]=useState(p.precio_alquiler!=null?p.precio_alquiler:'');
+  const [precioServ,setPrecioServ]=useState(p.precio_servicio!=null?p.precio_servicio:'');
   const [codGranel,setCodGranel]=useState(p.codigo_granel||'');
   const [units,setUnits]=useState(null);
   const [saving,setSaving]=useState(false);
@@ -1536,6 +1538,7 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
     setSaving(true);
     const patch={nombre,area_id:areaId||null,imagen_url:img||null};
     patch.precio_alquiler = (precio===''||precio===null) ? null : Number(precio);
+    patch.precio_servicio = (precioServ===''||precioServ===null) ? null : Number(precioServ);
     if(!ser){ patch.cantidad_total=Number(cantidad)||0; patch.codigo_granel=codGranel.trim()||null; }
     const {error}=await sb.from('stock_productos').update(patch).eq('id',p.id);
     if(error){ setSaving(false); alert('No se pudo guardar.'); return; }
@@ -1721,6 +1724,12 @@ function ProductModal({p,areas,canEdit,isAdmin,onClose}){
             {canEdit?
               <input type="number" min="0" step="any" value={precio} onChange={e=>setPrecio(e.target.value)} placeholder="— sin precio —"/>
               :<div className="ro">{p.precio_alquiler!=null?('$ '+fmtMoney(p.precio_alquiler)):'—'}</div>}
+          </div>
+
+          <div className="frow"><label>Precio de servicio ($)</label>
+            {canEdit?
+              <input type="number" min="0" step="any" value={precioServ} onChange={e=>setPrecioServ(e.target.value)} placeholder="— sin precio —"/>
+              :<div className="ro">{p.precio_servicio!=null?('$ '+fmtMoney(p.precio_servicio)):'—'}</div>}
           </div>
 
           {!ser&&<ProdHistory productId={p.id}/>}
