@@ -692,11 +692,26 @@ function RemitoPrint({r,lineas,onClose}){
   const fEmis = r.creado_en?fechaCorta(r.creado_en):'';
   const fEnt = r.fecha_desde?fechaCorta(r.fecha_desde):'—';
   const fDev = r.fecha_hasta?fechaCorta(r.fecha_hasta):'—';
+  const [mostrarCodigos,setMostrarCodigos]=useState(true);
+  // Agrupar unidades iguales (misma descripción y estado) en una sola línea con su cantidad y los códigos juntos
+  const grupos=[]; const _gidx={};
+  ls.forEach(function(l){
+    const nombre=l._p?l._p.nombre:'—';
+    const dev=!!l.devuelto;
+    const serial=!!l.unidad_id;
+    const key=nombre+'|'+(dev?'D':'')+'|'+(serial?'S':('G:'+((l._p&&l._p.codigo_granel)||'')));
+    if(_gidx[key]==null){ _gidx[key]=grupos.length; grupos.push({nombre:nombre,dev:dev,serial:serial,cant:0,codes:[],granel:((l._p&&l._p.codigo_granel)||'')}); }
+    const g=grupos[_gidx[key]];
+    if(serial){ g.cant+=1; const cc=l._u?l._u.codigo:''; if(cc) g.codes.push(cc); }
+    else { g.cant+=Number(l.cantidad||1); }
+  });
+  grupos.forEach(function(g){ g.codes.sort(function(a,b){return String(a).localeCompare(String(b),'es',{numeric:true});}); });
   const cont = (
     <div className="print-overlay" onClick={onClose}>
       <style>{'@media print{@page{size:A4;margin:14mm}}'}</style>
       <div className="print-bar" onClick={e=>e.stopPropagation()}>
         <button className="btn-ghost" onClick={onClose}>‹ Volver</button>
+        <label style={{display:'flex',alignItems:'center',gap:6,fontSize:14,color:'#fff',cursor:'pointer'}}><input type="checkbox" checked={mostrarCodigos} onChange={e=>setMostrarCodigos(e.target.checked)}/> Mostrar códigos de barra</label>
         <button className="btn-save" onClick={()=>window.print()}>🖨️ Imprimir / Guardar PDF</button>
       </div>
       <div className="hoja" onClick={e=>e.stopPropagation()}>
@@ -727,11 +742,10 @@ function RemitoPrint({r,lineas,onClose}){
           <table className="rtab">
             <thead><tr><th style={{width:'12%'}}>Cant.</th><th>Descripción</th><th style={{width:'28%'}}>Código</th></tr></thead>
             <tbody>
-              {ls.length===0 && <tr><td colSpan={3} style={{textAlign:'center',color:'#888'}}>Sin ítems cargados</td></tr>}
-              {ls.map(function(l){
-                const desc=l._p?l._p.nombre:'—';
-                const cod=(l._u?l._u.codigo:(l._p?l._p.codigo_granel:''))||'';
-                return <tr key={l.id}><td style={{textAlign:'center'}}>{l.cantidad||1}</td><td>{desc}{l.devuelto?' (devuelto)':''}</td><td className="rmono">{cod}</td></tr>;
+              {grupos.length===0 && <tr><td colSpan={3} style={{textAlign:'center',color:'#888'}}>Sin ítems cargados</td></tr>}
+              {grupos.map(function(g,i){
+                const cod = !mostrarCodigos ? '' : (g.serial ? g.codes.join(', ') : g.granel);
+                return <tr key={i}><td style={{textAlign:'center'}}>{g.cant}</td><td>{g.nombre}{g.dev?' (devuelto)':''}</td><td className="rmono" style={{whiteSpace:'normal',wordBreak:'break-word'}}>{cod}</td></tr>;
               })}
             </tbody>
           </table>
