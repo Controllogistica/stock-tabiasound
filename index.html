@@ -867,6 +867,18 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   const cargarAdjuntos=async()=>{ const res=await sb.from('stock_remito_adjuntos').select('*').eq('remito_id',remito.id).order('creado_en'); setAdjuntos(res.data||[]); };
   useEffect(()=>{ cargarAdjuntos(); },[]);
   const esPropio = !!(perfil && perfil.id && r.creado_por && perfil.id===r.creado_por);
+  const puedePresu = !!(perfil && perfil.puede_presupuestos);
+  const [genPres,setGenPres]=useState(false);
+  async function generarPresupuesto(){
+    if(!confirm('Generar un presupuesto con los productos de este remito.\nDespués podés ajustar cantidades y precios en Presupuestos. ¿Seguimos?')) return;
+    setGenPres(true);
+    const res=await sb.rpc('remito_a_presupuesto',{p_remito_id:r.id});
+    setGenPres(false);
+    if(res.error){ alert('No se pudo generar el presupuesto: '+res.error.message); return; }
+    const pid=res.data&&res.data.presupuesto_id;
+    if(!pid){ alert('No se pudo generar el presupuesto.'); return; }
+    window.open('https://presupuestos-tabiasound.vercel.app/?p='+pid,'_blank');
+  }
   const puedeGestion = esGestion || esPropio;
   const [lineas,setLineas]=useState(null);
   const [code,setCode]=useState('');
@@ -1090,6 +1102,7 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
 
       <div className="det-actions" style={{marginTop:12,marginBottom:2}}>
         <button className="btn-ghost wide" onClick={()=>setImprimir(true)}>🖨️ Imprimir / PDF</button>
+        {puedePresu&&<button className="btn-ghost wide" style={{marginTop:8,borderColor:'#0e6e5e',color:'#0e6e5e'}} onClick={generarPresupuesto} disabled={genPres}>{genPres?'Generando…':'📄 Generar presupuesto'}</button>}
       </div>
       {imprimir&&<RemitoPrint r={r} lineas={lineas} onClose={()=>setImprimir(false)}/>}
 
