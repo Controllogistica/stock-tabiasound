@@ -1355,7 +1355,7 @@ function Catalogo({perfil,showToast}){
           <button disabled={page+1>=totalPages} onClick={()=>{setPage(p=>p+1);window.scrollTo(0,0);}}>Siguiente →</button>
         </div>}
 
-      {sel&&<ProductModal p={sel} areas={areas} canEdit={canEdit} isAdmin={perfil.rol_stock==='admin'} onClose={closeModal}/>}
+      {sel&&<ProductModal p={sel} areas={areas} canEdit={canEdit} isAdmin={perfil.rol_stock==='admin'||perfil.rol_stock==='jefe_area'} onClose={closeModal}/>}
       {creando&&<NuevoProducto areas={areas} onClose={()=>setCreando(false)} onCreated={async(id)=>{ setCreando(false); load(); const {data}=await sb.from('vw_stock_productos').select('*').eq('id',id).maybeSingle(); if(data) setSel(data); }}/>}
     </div>
   );
