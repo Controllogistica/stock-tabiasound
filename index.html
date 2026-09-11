@@ -889,6 +889,7 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   const [lote,setLote]=useState('');
   const [loteBusy,setLoteBusy]=useState(false);
   const [imprimir,setImprimir]=useState(false);
+  const [gAbiertos,setGAbiertos]=useState({}); // grupos de series desplegados en el armado
   const [subiendoAdj,setSubiendoAdj]=useState(false);
   const [editH,setEditH]=useState(false);
   const [hd,setHd]=useState({evento:'',cliente:'',direccion:'',desde:'',hasta:''});
@@ -1075,6 +1076,20 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   };
 
   const pendientes=(lineas||[]).filter(l=>!l.devuelto).length;
+  const totalUnidades=(lineas||[]).reduce((a,l)=>a+(l.unidad_id?1:(Number(l.cantidad)||0)),0);
+  // Cluster de acciones/estado de UNA línea (unidad o granel). Se reutiliza en la fila
+  // suelta (granel) y en cada serie dentro de un grupo desplegado.
+  const accionesUnidad=(l)=> l.devuelto
+    ? <span className={'lin-badge '+((l._u&&l._u.estado==='perdido')?'lost':'ok')}>{(l._u&&l._u.estado==='perdido')?'Perdido':'Devuelto'}</span>
+    : (incompleto||r.estado==='cerrado')
+      ? <div className="lin-acts">
+          <button className="lin-dev" onClick={()=>resolverLinea(l,'devuelto')}>Devuelto</button>
+          <button className="lin-lost" onClick={()=>{ if(l.unidad_id ? confirm('¿Marcar como PERDIDO? La unidad va a quedar como perdida (no disponible).') : true) resolverLinea(l,'perdido'); }}>Perdido</button>
+        </div>
+      : <div className="lin-acts">
+          <button className="lin-x" onClick={()=>quitarLinea(l)}>Quitar</button>
+          <button className="lin-dev" onClick={()=>devolverLinea(l)}>Devolver</button>
+        </div>;
   return (
     <div className="rwrap">
       <button className="hbtn" onClick={onBack}>‹ Volver a remitos</button>
@@ -1143,29 +1158,57 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
           </details>
         </div>}
 
-      <div className="lin-head">Ítems ({lineas?lineas.length:'…'}){(activo||incompleto)&&lineas?' · pendientes: '+pendientes:''}</div>
+      <div className="lin-head">Ítems ({lineas?totalUnidades:'…'} u){(activo||incompleto)&&lineas?' · pendientes: '+pendientes:''}</div>
       {lineas===null?<div className="spinner"/>:
        lineas.length===0?<div className="empty">Sin ítems todavía.</div>:
-       <div className="lin-list">{lineas.map(l=>(
-         <div className={'lin-row'+(l.devuelto?' dev':'')} key={l.id}>
-           <div className="lin-main">
-             <div className="lin-nm">{l._p?l._p.nombre:'(producto)'}</div>
-             <div className="lin-sub">
-               {l.unidad_id?<span className="mono">{l._u?l._u.codigo:'—'}</span>:<span>x{l.cantidad} · {(l._p&&l._p.codigo_granel)||'granel'}{(Number(l.cantidad_devuelta)>0)?' · '+l.cantidad_devuelta+' devueltos':''}</span>}
-             </div>
-           </div>
-           {l.devuelto
-             ? <span className={'lin-badge '+((l._u&&l._u.estado==='perdido')?'lost':'ok')}>{(l._u&&l._u.estado==='perdido')?'Perdido':'Devuelto'}</span>
-             : (incompleto||r.estado==='cerrado')
-               ? <div className="lin-acts">
-                   <button className="lin-dev" onClick={()=>resolverLinea(l,'devuelto')}>Devuelto</button>
-                   {<button className="lin-lost" onClick={()=>{ if(l.unidad_id ? confirm('¿Marcar como PERDIDO? La unidad va a quedar como perdida (no disponible).') : true) resolverLinea(l,'perdido'); }}>Perdido</button>}
+       (()=>{
+         // Agrupar las SERIES iguales (mismo producto + mismo estado) en un renglón
+         // colapsable que suma unidades, tipo vista de impresión. El granel queda como
+         // fila propia (ya trae su cantidad). La agrupación es SOLO visual: en la base
+         // se sigue guardando una línea por serie, así devolución/perdido por unidad andan igual.
+         const items=[]; const idx={};
+         (lineas||[]).forEach(l=>{
+           if(!l.unidad_id){ items.push({tipo:'granel',l:l}); return; }
+           const bucket = l.devuelto ? ((l._u&&l._u.estado==='perdido')?'perdido':'devuelto') : 'pendiente';
+           const key='g|'+(l.producto_id||'')+'|'+bucket;
+           if(idx[key]==null){ idx[key]=items.length; items.push({tipo:'grupo',key:key,nombre:(l._p?l._p.nombre:'(producto)'),bucket:bucket,items:[]}); }
+           items[idx[key]].items.push(l);
+         });
+         return <div className="lin-list">{items.map(function(it){
+           if(it.tipo==='granel'){ const l=it.l; return (
+             <div className={'lin-row'+(l.devuelto?' dev':'')} key={l.id}>
+               <div className="lin-main">
+                 <div className="lin-nm">{l._p?l._p.nombre:'(producto)'}</div>
+                 <div className="lin-sub"><span>x{l.cantidad} · {(l._p&&l._p.codigo_granel)||'granel'}{(Number(l.cantidad_devuelta)>0)?' · '+l.cantidad_devuelta+' devueltos':''}</span></div>
+               </div>
+               {accionesUnidad(l)}
+             </div>); }
+           const abierto=!!gAbiertos[it.key];
+           const chip = it.bucket==='perdido'
+             ? <span className="lin-badge lost">{it.items.length} u · Perdido</span>
+             : it.bucket==='devuelto'
+               ? <span className="lin-badge ok">{it.items.length} u · Devuelto</span>
+               : <span className="lin-badge" style={{background:'#eef0f4',color:'#2b3a4a'}}>{it.items.length} u</span>;
+           return (
+             <div key={it.key} style={{marginBottom:8}}>
+               <div className={'lin-row'+(it.bucket!=='pendiente'?' dev':'')} style={{cursor:'pointer'}}
+                 onClick={()=>setGAbiertos(s=>({...s,[it.key]:!s[it.key]}))}>
+                 <div className="lin-main">
+                   <div className="lin-nm">{abierto?'▾ ':'▸ '}{it.nombre}</div>
+                   <div className="lin-sub">{it.items.length} unidad{it.items.length===1?'':'es'} · tocá para ver los códigos</div>
                  </div>
-               : <div className="lin-acts">
-                   <button className="lin-x" onClick={()=>quitarLinea(l)}>Quitar</button>
-                   <button className="lin-dev" onClick={()=>devolverLinea(l)}>Devolver</button>
-                 </div>}
-         </div>))}</div>}
+                 {chip}
+               </div>
+               {abierto&&<div style={{paddingLeft:16,borderLeft:'2px solid #e6e8ee',marginLeft:6,marginTop:4}}>
+                 {it.items.map(function(l){ return (
+                   <div className={'lin-row sub'+(l.devuelto?' dev':'')} key={l.id} style={{background:'transparent'}}>
+                     <div className="lin-main"><div className="lin-sub"><span className="mono">{l._u?l._u.codigo:'—'}</span></div></div>
+                     {accionesUnidad(l)}
+                   </div>); })}
+               </div>}
+             </div>);
+         })}</div>;
+       })()}
 
       {activo&&<div className="det-actions">
         {armando&&puedeGestion&&<button className="btn-primary wide" onClick={marcarPreparado}>✔ Marcar como preparado</button>}
