@@ -767,7 +767,7 @@ function Remitos({perfil,showToast,archivados}){
   const [sel,setSel]=useState(null);
   const [creating,setCreating]=useState(false); const [areaFiltro,setAreaFiltro]=useState('all');
   const [fechaFiltro,setFechaFiltro]=useState(new URLSearchParams(window.location.search).get('remito')==='hoy'?'hoy':'todos');
-  const load=()=>sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}).limit(100).then(({data})=>setRemitos(data||[]));
+  const load=()=>{ let _q=sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}); _q = archivados ? _q.eq('estado','cerrado').limit(500) : _q.neq('estado','cerrado').limit(1000); return _q.then(({data})=>setRemitos(data||[])); };
   useEffect(()=>{ load(); },[])
   // Auto-refresco suave cada 60s: recarga el tablero si no hay un remito/modal
   // abierto, la pestaña está visible y no se está escribiendo.
