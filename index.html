@@ -1450,11 +1450,12 @@ function RemitoOficialDetalle({id,perfil,showToast,onBack}){
   const inp=(k,label,ph)=>(<div className="frow"><label>{label}</label><input value={o[k]||''} disabled={!editable} placeholder={ph||''} onChange={e=>setF(k,e.target.value)}/></div>);
   const venceProx=cai&&(cai.dias_vto<=20||cai.restantes<=20);
   return (
-    <div className="rwrap">
+    <div className="rwrap rof">
+      <style>{'.rof .frow input{width:100%;box-sizing:border-box;min-width:0} .rof .grid2>*{min-width:0} .rof .rof-it input{width:100%;box-sizing:border-box;min-width:0} .rof .rof-it{display:grid;grid-template-columns:64px 1fr auto;gap:8px;align-items:start} .rof .lin-head{margin-top:18px}'}</style>
       <button className="hbtn" onClick={()=>{ if(dirty&&!confirm('Hay cambios sin guardar. ¿Salir igual?')) return; onBack(); }}>‹ Volver</button>
       <div className="det-head">
         <div><div className="rem-ev" style={{fontSize:20}}>Remito oficial {remNum(o)}</div>
-          <div className="rem-sub">{o.receptor_nombre||'(sin receptor)'} · {remFecha(o.fecha)}{o.orden_compra?(' · OC '+o.orden_compra):''}</div></div>
+          <div className="rem-sub">{o.receptor_nombre||'(sin receptor)'} · {remFecha(o.fecha)}{o.orden_compra?(' · OC '+String(o.orden_compra).replace(/^\s*OC\s*/i,'')):''}</div></div>
         <RemChip estado={o.estado}/>
       </div>
       {o.estado==='borrador'&&cai===null&&<div className="empty" style={{background:'#FBEAEA',color:'#a82626',textAlign:'left',marginTop:10}}>No hay un CAI vigente cargado. Podés armar y guardar el borrador, pero para emitirlo un administrador tiene que cargar el CAI.</div>}
@@ -1480,8 +1481,8 @@ function RemitoOficialDetalle({id,perfil,showToast,onBack}){
       <div className="lin-head">Ítems ({items.length})</div>
       <div className="lin-list">
         {items.map((it,i)=>(
-          <div className="lin-row" key={i} style={{alignItems:'flex-start',gap:8}}>
-            <input style={{width:70}} type="number" min="0" step="any" value={it.cantidad} disabled={!editable} onChange={e=>setIt(i,'cantidad',e.target.value)}/>
+          <div className="lin-row rof-it" key={i}>
+            <input type="number" min="0" step="any" value={it.cantidad} disabled={!editable} onChange={e=>setIt(i,'cantidad',e.target.value)}/>
             <div style={{flex:1,display:'flex',flexDirection:'column',gap:4}}>
               <input value={it.descripcion||''} disabled={!editable} placeholder="Descripción (tal cual la OC si corresponde)" onChange={e=>setIt(i,'descripcion',e.target.value)}/>
               <input value={it.codigo||''} disabled={!editable} placeholder="Código (opcional)" onChange={e=>setIt(i,'codigo',e.target.value)} style={{fontSize:12}}/>
@@ -1500,9 +1501,9 @@ function RemitoOficialDetalle({id,perfil,showToast,onBack}){
       <div className="det-actions" style={{marginTop:16}}>
         <button className="btn-ghost wide" onClick={async()=>{ if(dirty&&editable){ const ok=await guardar(true); if(!ok) return; } setImprimir(true); }}>🖨️ {o.estado==='borrador'?'Vista previa':'Imprimir / PDF'}</button>
         {editable&&<button className="btn-ghost wide" style={{marginTop:8}} disabled={busy||!dirty} onClick={()=>guardar(false)}>{busy?'Guardando…':'💾 Guardar borrador'}</button>}
-        {editable&&<button className="btn-save wide" style={{marginTop:8}} disabled={busy||cai===undefined} onClick={emitir}>✅ Emitir remito oficial</button>}
-        {editable&&<button className="lin-x" style={{marginTop:12}} onClick={descartar}>Descartar borrador</button>}
-        {puede&&o.estado==='emitido'&&<button className="lin-lost" style={{marginTop:12}} onClick={anular}>Anular remito</button>}
+        {editable&&<button className="btn-save wide" style={{marginTop:8,width:'100%'}} disabled={busy||cai===undefined} onClick={emitir}>✅ Emitir remito oficial</button>}
+        {editable&&<div style={{marginTop:12}}><button className="lin-x" onClick={descartar}>Descartar borrador</button></div>}
+        {puede&&o.estado==='emitido'&&<div style={{marginTop:12}}><button className="lin-lost" onClick={anular}>Anular remito</button></div>}
       </div>
       {imprimir&&<RemitoOficialPrint o={o} items={items} emisor={emisor} onClose={()=>setImprimir(false)}/>}
     </div>
@@ -1591,7 +1592,7 @@ function RemitosOficiales({perfil,showToast}){
         <div className="rem-list">{vis.map(x=>(
           <div className="rem-card" key={x.id} onClick={()=>setSel(x.id)}>
             <div className="rem-main"><div className="rem-ev">{remNum(x)} · {x.receptor_nombre||'(sin receptor)'}</div>
-              <div className="rem-sub">{remFecha(x.fecha)}{x.orden_compra?(' · OC '+x.orden_compra):''}{x.lugar_entrega?(' · '+x.lugar_entrega):''}</div></div>
+              <div className="rem-sub">{remFecha(x.fecha)}{x.orden_compra?(' · OC '+String(x.orden_compra).replace(/^\s*OC\s*/i,'')):''}{x.lugar_entrega?(' · '+x.lugar_entrega):''}</div></div>
             <RemChip estado={x.estado}/>
           </div>))}</div>}
       {verCai&&<CaiAdmin onClose={()=>{ setVerCai(false); load(); }} showToast={showToast}/>}
