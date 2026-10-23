@@ -907,6 +907,18 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   const [lote,setLote]=useState('');
   const [loteBusy,setLoteBusy]=useState(false);
   const [imprimir,setImprimir]=useState(false);
+  const [oficiales,setOficiales]=useState([]);
+  const [verOficial,setVerOficial]=useState(null);
+  const [genOf,setGenOf]=useState(false);
+  const cargarOficiales=async()=>{ const res=await sb.from('rem_oficial').select('id,estado,punto_venta,numero').eq('remito_interno_id',remito.id).order('creado_en'); setOficiales(res.data||[]); };
+  useEffect(()=>{ cargarOficiales(); },[]);
+  async function generarOficial(){
+    if(!lineas||!lineas.length){ alert('El remito no tiene ítems para pasar al remito oficial.'); return; }
+    if(!confirm('Se crea un BORRADOR de remito oficial (NEW GATE) con los ítems de este remito.\nLo revisás, completás los datos del receptor y lo emitís. No mueve stock. ¿Seguimos?')) return;
+    setGenOf(true);
+    try{ const o=await remCrearDesdeInterno(r,lineas); setGenOf(false); await cargarOficiales(); setVerOficial(o.id); }
+    catch(e){ setGenOf(false); alert('No se pudo crear el remito oficial: '+(e&&e.message?e.message:e)); }
+  }
   const [gAbiertos,setGAbiertos]=useState({}); // grupos de series desplegados en el armado
   const [subiendoAdj,setSubiendoAdj]=useState(false);
   const [editH,setEditH]=useState(false);
@@ -1108,6 +1120,7 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
           <button className="lin-x" onClick={()=>quitarLinea(l)}>Quitar</button>
           <button className="lin-dev" onClick={()=>devolverLinea(l)}>Devolver</button>
         </div>;
+  if(verOficial) return <RemitoOficialDetalle id={verOficial} perfil={perfil} showToast={showToast} onBack={()=>{ setVerOficial(null); cargarOficiales(); }}/>;
   return (
     <div className="rwrap">
       <button className="hbtn" onClick={onBack}>‹ Volver a remitos</button>
@@ -1136,6 +1149,8 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
       <div className="det-actions" style={{marginTop:12,marginBottom:2}}>
         <button className="btn-ghost wide" onClick={()=>setImprimir(true)}>🖨️ Imprimir / PDF</button>
         {puedePresu&&<button className="btn-ghost wide" style={{marginTop:8,borderColor:'#0e6e5e',color:'#0e6e5e'}} onClick={generarPresupuesto} disabled={genPres}>{genPres?'Generando…':'📄 Generar presupuesto'}</button>}
+        {oficiales.map(function(x){ return <button key={x.id} className="btn-ghost wide" style={{marginTop:8,borderColor:'#1d3b6e',color:'#1d3b6e'}} onClick={()=>setVerOficial(x.id)}>🧾 Remito oficial {remNum(x)} · {(REM_EST[x.estado]||{}).txt}</button>; })}
+        {remPuede(perfil)&&<button className="btn-ghost wide" style={{marginTop:8,borderColor:'#1d3b6e',color:'#1d3b6e'}} onClick={generarOficial} disabled={genOf}>{genOf?'Creando…':(oficiales.length?'🧾 Generar otro remito oficial':'🧾 Generar remito oficial')}</button>}
       </div>
       {imprimir&&<RemitoPrint r={r} lineas={lineas} onClose={()=>setImprimir(false)}/>}
 
@@ -1246,9 +1261,347 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   );
 }
 
+/* ====== REMITO OFICIAL (tipo R, CAI) — NEW GATE SRL ====== */
+// Los remitos oficiales NO mueven stock: son el comprobante legal del traslado.
+// Se crean como borrador (a mano, desde un remito interno o desde Facturación),
+// y al emitir el sistema les asigna el número correlativo del CAI vigente.
+const remPuede=p=>!!(p&&((p.rol_stock==='admin'||p.rol_stock==='jefe_area')||p.puede_facturacion));
+const remAdmin=p=>!!(p&&p.rol_stock==='admin');
+const remNum=o=>(o&&o.numero!=null)?(String(o.punto_venta||0).padStart(4,'0')+'-'+String(o.numero).padStart(8,'0')):'BORRADOR';
+const remFecha=d=>{ if(!d) return '—'; const p=String(d).slice(0,10).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):d; };
+const REM_EST={borrador:{txt:'Borrador',bg:'#FFF4E0',fg:'#9a5b00'},emitido:{txt:'Emitido',bg:'#E6F4EA',fg:'#0b6b2e'},anulado:{txt:'Anulado',bg:'#FBEAEA',fg:'#a82626'}};
+function RemChip({estado}){ const e=REM_EST[estado]||REM_EST.borrador; return <span className="rem-est" style={{background:e.bg,color:e.fg}}>{e.txt}</span>; }
+
+// Agrupa las líneas de un remito interno igual que el remito impreso
+function remAgruparLineas(lineas){
+  const out=[]; const idx={};
+  (lineas||[]).forEach(function(l){
+    const nombre=l._p?l._p.nombre:'(producto)';
+    const serial=!!l.unidad_id;
+    const key=nombre+'|'+(serial?'S':'G');
+    if(idx[key]==null){ idx[key]=out.length; out.push({descripcion:nombre,cantidad:0,codes:[],granel:(l._p&&l._p.codigo_granel)||''}); }
+    const g=out[idx[key]];
+    if(serial){ g.cantidad+=1; if(l._u&&l._u.codigo) g.codes.push(l._u.codigo); } else g.cantidad+=Number(l.cantidad||1);
+  });
+  return out.map(function(g){ g.codes.sort(function(a,b){return String(a).localeCompare(String(b),'es',{numeric:true});}); return {descripcion:g.descripcion,cantidad:g.cantidad,codigo:g.codes.length?g.codes.join(', '):(g.granel||null)}; });
+}
+
+// Busca los datos fiscales del cliente a partir del evento del remito interno
+async function remReceptorDesdeEvento(eventoId){
+  if(!eventoId) return null;
+  const ev=await sb.from('evento').select('cliente_id').eq('id',eventoId).maybeSingle();
+  const cid=ev.data&&ev.data.cliente_id; if(!cid) return null;
+  const c=await sb.from('cliente').select('id,nombre,razon_social,cuit,afip').eq('id',cid).maybeSingle();
+  if(!c.data) return null;
+  const d=await sb.from('cliente_direccion').select('calle,ciudad,provincia').eq('cliente_id',cid).limit(1);
+  const dir=(d.data&&d.data[0])?[d.data[0].calle,d.data[0].ciudad,d.data[0].provincia].filter(Boolean).join(', '):null;
+  return {cliente_id:c.data.id,receptor_nombre:c.data.razon_social||c.data.nombre||null,receptor_cuit:c.data.cuit||null,receptor_cond_iva:c.data.afip||null,receptor_domicilio:dir};
+}
+
+// Crea un borrador de remito oficial a partir de un remito interno
+async function remCrearDesdeInterno(r,lineas){
+  const rec=(await remReceptorDesdeEvento(r.evento_id))||{};
+  const ins=await sb.from('rem_oficial').insert({
+    remito_interno_id:r.id, evento_id:r.evento_id||null, cliente_id:rec.cliente_id||null,
+    receptor_nombre:rec.receptor_nombre||r.cliente||null, receptor_cuit:rec.receptor_cuit||null,
+    receptor_cond_iva:rec.receptor_cond_iva||null, receptor_domicilio:rec.receptor_domicilio||null,
+    lugar_entrega:r.direccion||null, observacion:r.evento?('Evento: '+r.evento):null
+  }).select().single();
+  if(ins.error) throw new Error(ins.error.message);
+  const items=remAgruparLineas(lineas).map(function(it,i){ return {remito_id:ins.data.id,orden:i,cantidad:it.cantidad,descripcion:it.descripcion,codigo:it.codigo}; });
+  if(items.length){ const ii=await sb.from('rem_oficial_item').insert(items); if(ii.error) throw new Error(ii.error.message); }
+  return ins.data;
+}
+
+function RemitoOficialPrint({o,items,emisor,onClose}){
+  const em=emisor||{};
+  const borrador=o.estado==='borrador';
+  const cont=(
+    <div className="print-overlay" onClick={onClose}>
+      <style>{'@media print{@page{size:A4;margin:12mm}} .ro-box{border:1.5px solid #111;border-radius:4px} .ro-hdr{display:grid;grid-template-columns:1fr 70px 1fr;border-bottom:1.5px solid #111} .ro-hdr>div{padding:10px 12px} .ro-letra{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;border-left:1.5px solid #111;border-right:1.5px solid #111;padding:6px 0!important} .ro-letra b{font-size:34px;line-height:1} .ro-letra small{font-size:9px;margin-top:2px} .ro-sec{padding:8px 12px;border-bottom:1px solid #999;font-size:12.5px} .ro-sec .dl{color:#555} .ro-g2{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px} .ro-pie{display:flex;justify-content:space-between;padding:8px 12px;font-size:12px;border-top:1.5px solid #111} .ro-wm{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-24deg);font-size:64px;font-weight:800;color:rgba(200,0,0,.13);white-space:nowrap;pointer-events:none;z-index:2}'}</style>
+      <div className="print-bar" onClick={e=>e.stopPropagation()}>
+        <button className="btn-ghost" onClick={onClose}>‹ Volver</button>
+        <button className="btn-save" onClick={()=>window.print()}>🖨️ Imprimir / Guardar PDF</button>
+      </div>
+      <div className="hoja" onClick={e=>e.stopPropagation()}>
+        {borrador&&<div className="ro-wm">BORRADOR · NO VÁLIDO</div>}
+        {o.estado==='anulado'&&<div className="ro-wm">ANULADO</div>}
+        <div className="ro-box">
+          <div className="ro-hdr">
+            <div>
+              <div style={{fontSize:17,fontWeight:800}}>{em.razon_social||'NEW GATE S.R.L.'}</div>
+              <div style={{fontSize:11.5,marginTop:4}}>{em.domicilio||''}</div>
+              <div style={{fontSize:11.5}}>{em.condicion_iva||''}</div>
+            </div>
+            <div className="ro-letra"><b>R</b><small>COD. 91</small></div>
+            <div style={{fontSize:12}}>
+              <div style={{fontSize:17,fontWeight:800}}>REMITO</div>
+              <div><span className="dl">N°</span> <b>{remNum(o)}</b></div>
+              <div><span className="dl">Fecha:</span> {remFecha(o.fecha)}</div>
+              <div><span className="dl">CUIT:</span> {em.cuit||''}</div>
+              {em.iibb&&<div><span className="dl">IIBB:</span> {em.iibb}</div>}
+              {em.inicio_actividades&&<div><span className="dl">Inicio de actividades:</span> {em.inicio_actividades}</div>}
+            </div>
+          </div>
+          <div className="ro-sec ro-g2">
+            <div><span className="dl">Señor/es:</span> {o.receptor_nombre||'—'}</div>
+            <div><span className="dl">CUIT:</span> {o.receptor_cuit||'—'}</div>
+            <div><span className="dl">Domicilio:</span> {o.receptor_domicilio||'—'}</div>
+            <div><span className="dl">Cond. IVA:</span> {o.receptor_cond_iva||'—'}</div>
+          </div>
+          <div className="ro-sec ro-g2">
+            <div><span className="dl">Lugar de entrega:</span> {o.lugar_entrega||'—'}</div>
+            <div><span className="dl">Origen:</span> {o.origen||em.domicilio||'—'}</div>
+            {(o.transportista||o.patente)&&<div><span className="dl">Transportista:</span> {o.transportista||'—'}{o.transporte_cuit?(' · CUIT '+o.transporte_cuit):''}</div>}
+            {o.patente&&<div><span className="dl">Patente:</span> {o.patente}</div>}
+            {o.orden_compra&&<div><span className="dl">Orden de compra:</span> {o.orden_compra}</div>}
+          </div>
+          <table className="rtab" style={{marginTop:0,border:'none'}}>
+            <thead><tr><th style={{width:'12%'}}>Cant.</th><th>Descripción</th><th style={{width:'26%'}}>Código</th></tr></thead>
+            <tbody>
+              {(items||[]).length===0&&<tr><td colSpan={3} style={{textAlign:'center',color:'#888'}}>Sin ítems</td></tr>}
+              {(items||[]).map(function(it,i){ return <tr key={i}><td style={{textAlign:'center'}}>{Number(it.cantidad)}</td><td>{it.descripcion}</td><td className="rmono" style={{whiteSpace:'normal',wordBreak:'break-word'}}>{it.codigo||''}</td></tr>; })}
+            </tbody>
+          </table>
+          {o.observacion&&<div className="ro-sec" style={{borderTop:'1px solid #999'}}><span className="dl">Observaciones:</span> {o.observacion}</div>}
+          <div className="firmas" style={{padding:'0 12px'}}>
+            <div className="fbox"><div className="fl"></div><div className="fc">Entregó</div></div>
+            <div className="fbox"><div className="fl"></div><div className="fc">Recibí conforme — Firma, aclaración y DNI</div></div>
+          </div>
+          <div className="ro-pie">
+            <div>{o.cai?<span><b>C.A.I. N°:</b> {o.cai}</span>:<span>C.A.I.: se asigna al emitir</span>}</div>
+            <div>{o.cai_vto?<span><b>Fecha Vto.:</b> {remFecha(o.cai_vto)}</span>:''}</div>
+          </div>
+        </div>
+        <div className="pie" style={{marginTop:8}}>Documento no válido como factura · Original: Cliente · Duplicado: Emisor</div>
+        {o.estado==='anulado'&&<div className="pie" style={{color:'#a82626'}}>Anulado: {o.anulado_motivo||''}</div>}
+      </div>
+    </div>
+  );
+  return ReactDOM.createPortal(cont,document.body);
+}
+
+function RemitoOficialDetalle({id,perfil,showToast,onBack}){
+  const puede=remPuede(perfil);
+  const [o,setO]=useState(null);
+  const [items,setItems]=useState([]);
+  const [emisor,setEmisor]=useState(null);
+  const [cai,setCai]=useState(undefined);
+  const [busy,setBusy]=useState(false);
+  const [imprimir,setImprimir]=useState(false);
+  const [dirty,setDirty]=useState(false);
+  const aviso=m=>{ if(showToast) showToast(m); else alert(m); };
+  const load=async()=>{
+    const a=await sb.from('rem_oficial').select('*').eq('id',id).single();
+    if(a.error){ alert('No se pudo abrir el remito oficial.'); onBack(); return; }
+    const b=await sb.from('rem_oficial_item').select('*').eq('remito_id',id).order('orden');
+    setO(a.data); setItems((b.data||[]).map(x=>({...x}))); setDirty(false);
+  };
+  useEffect(()=>{ load(); sb.rpc('rem_emisor').then(r=>setEmisor(r.data||null)); sb.rpc('rem_cai_estado').then(r=>setCai(r.error?null:(r.data||null))); },[id]);
+  if(!o) return <div className="rwrap"><div className="spinner"/></div>;
+  const editable=puede&&o.estado==='borrador';
+  const setF=(k,v)=>{ setO(prev=>({...prev,[k]:v})); setDirty(true); };
+  const setIt=(i,k,v)=>{ setItems(prev=>prev.map((x,j)=>j===i?{...x,[k]:v}:x)); setDirty(true); };
+  const addIt=()=>{ setItems(prev=>prev.concat([{cantidad:1,descripcion:'',codigo:''}])); setDirty(true); };
+  const delIt=i=>{ setItems(prev=>prev.filter((x,j)=>j!==i)); setDirty(true); };
+  const movIt=(i,d)=>{ setItems(prev=>{ const a=prev.slice(); const j=i+d; if(j<0||j>=a.length) return a; const t=a[i]; a[i]=a[j]; a[j]=t; return a; }); setDirty(true); };
+
+  const guardar=async(silencioso)=>{
+    const malos=items.filter(x=>!(Number(x.cantidad)>0)||!String(x.descripcion||'').trim());
+    if(malos.length){ alert('Cada ítem necesita cantidad mayor a 0 y descripción.'); return false; }
+    setBusy(true);
+    const campos=['fecha','receptor_nombre','receptor_cuit','receptor_cond_iva','receptor_domicilio','lugar_entrega','origen','transportista','transporte_cuit','patente','orden_compra','observacion'];
+    const patch={}; campos.forEach(k=>{ const v=o[k]; patch[k]=(typeof v==='string')?(v.trim()||null):(v==null?null:v); });
+    if(!patch.fecha) patch.fecha=new Date().toISOString().slice(0,10);
+    const u=await sb.from('rem_oficial').update(patch).eq('id',o.id);
+    if(u.error){ setBusy(false); alert('No se pudo guardar: '+u.error.message); return false; }
+    const d=await sb.from('rem_oficial_item').delete().eq('remito_id',o.id);
+    if(d.error){ setBusy(false); alert('No se pudieron guardar los ítems: '+d.error.message); return false; }
+    if(items.length){
+      const ins=await sb.from('rem_oficial_item').insert(items.map((x,i)=>({remito_id:o.id,orden:i,cantidad:Number(x.cantidad),descripcion:String(x.descripcion).trim(),codigo:(x.codigo&&String(x.codigo).trim())||null})));
+      if(ins.error){ setBusy(false); alert('No se pudieron guardar los ítems: '+ins.error.message); return false; }
+    }
+    setBusy(false); await load(); if(!silencioso) aviso('Remito guardado'); return true;
+  };
+  const emitir=async()=>{
+    if(!cai){ alert('No hay un CAI vigente con números disponibles. Un administrador tiene que cargarlo en "Remitos oficiales → CAI".'); return; }
+    if(dirty){ const ok=await guardar(true); if(!ok) return; }
+    if(!confirm('¿Emitir el remito oficial?\n\nSe le asigna el número '+String(cai.punto_venta).padStart(4,'0')+'-'+String(cai.proximo).padStart(8,'0')+' y ya no se puede modificar (solo anular).')) return;
+    setBusy(true);
+    const r=await sb.rpc('rem_emitir',{p_id:o.id});
+    setBusy(false);
+    if(r.error){ alert('No se pudo emitir: '+r.error.message); return; }
+    await load(); sb.rpc('rem_cai_estado').then(x=>setCai(x.data||null));
+    aviso('Remito oficial emitido');
+  };
+  const anular=async()=>{
+    const m=prompt('Motivo de la anulación (el número queda usado y el remito figura como ANULADO):');
+    if(!m||!m.trim()) return;
+    const r=await sb.rpc('rem_anular',{p_id:o.id,p_motivo:m});
+    if(r.error){ alert('No se pudo anular: '+r.error.message); return; }
+    await load(); aviso('Remito anulado');
+  };
+  const descartar=async()=>{
+    if(!confirm('¿Descartar este borrador? No se puede deshacer.')) return;
+    const r=await sb.from('rem_oficial').delete().eq('id',o.id);
+    if(r.error){ alert('No se pudo descartar: '+r.error.message); return; }
+    aviso('Borrador descartado'); onBack();
+  };
+  const inp=(k,label,ph)=>(<div className="frow"><label>{label}</label><input value={o[k]||''} disabled={!editable} placeholder={ph||''} onChange={e=>setF(k,e.target.value)}/></div>);
+  const venceProx=cai&&(cai.dias_vto<=20||cai.restantes<=20);
+  return (
+    <div className="rwrap">
+      <button className="hbtn" onClick={()=>{ if(dirty&&!confirm('Hay cambios sin guardar. ¿Salir igual?')) return; onBack(); }}>‹ Volver</button>
+      <div className="det-head">
+        <div><div className="rem-ev" style={{fontSize:20}}>Remito oficial {remNum(o)}</div>
+          <div className="rem-sub">{o.receptor_nombre||'(sin receptor)'} · {remFecha(o.fecha)}{o.orden_compra?(' · OC '+o.orden_compra):''}</div></div>
+        <RemChip estado={o.estado}/>
+      </div>
+      {o.estado==='borrador'&&cai===null&&<div className="empty" style={{background:'#FBEAEA',color:'#a82626',textAlign:'left',marginTop:10}}>No hay un CAI vigente cargado. Podés armar y guardar el borrador, pero para emitirlo un administrador tiene que cargar el CAI.</div>}
+      {o.estado==='borrador'&&venceProx&&<div className="empty" style={{background:'#FFF4E0',color:'#9a5b00',textAlign:'left',marginTop:10}}>Atención: al CAI vigente le quedan {cai.dias_vto} días y {cai.restantes} números. Conviene pedir uno nuevo en ARCA.</div>}
+      {o.estado==='anulado'&&<div className="empty" style={{background:'#FBEAEA',color:'#a82626',textAlign:'left',marginTop:10}}>Anulado: {o.anulado_motivo}</div>}
+      {(o.remito_interno_id||o.comprobante_id)&&<div className="rem-sub" style={{marginTop:8}}>{o.remito_interno_id?'Generado desde un remito interno. ':''}{o.comprobante_id?'Vinculado a una factura. ':''}No mueve stock.</div>}
+
+      <div className="lin-head">Receptor</div>
+      {inp('receptor_nombre','Señor/es (razón social)')}
+      <div className="grid2">{inp('receptor_cuit','CUIT','30-12345678-9')}{inp('receptor_cond_iva','Condición IVA','Responsable Inscripto')}</div>
+      {inp('receptor_domicilio','Domicilio fiscal')}
+      <div className="lin-head">Traslado</div>
+      <div className="grid2">
+        <div className="frow"><label>Fecha</label><input type="date" value={o.fecha||''} disabled={!editable} onChange={e=>setF('fecha',e.target.value)}/></div>
+        {inp('orden_compra','Orden de compra','Opcional')}
+      </div>
+      {inp('lugar_entrega','Lugar de entrega')}
+      {inp('origen','Origen (si no es el domicilio del emisor)')}
+      <div className="grid2">{inp('transportista','Transportista','Opcional')}{inp('transporte_cuit','CUIT transportista','Opcional')}</div>
+      {inp('patente','Patente','Opcional')}
+      {inp('observacion','Observaciones')}
+
+      <div className="lin-head">Ítems ({items.length})</div>
+      <div className="lin-list">
+        {items.map((it,i)=>(
+          <div className="lin-row" key={i} style={{alignItems:'flex-start',gap:8}}>
+            <input style={{width:70}} type="number" min="0" step="any" value={it.cantidad} disabled={!editable} onChange={e=>setIt(i,'cantidad',e.target.value)}/>
+            <div style={{flex:1,display:'flex',flexDirection:'column',gap:4}}>
+              <input value={it.descripcion||''} disabled={!editable} placeholder="Descripción (tal cual la OC si corresponde)" onChange={e=>setIt(i,'descripcion',e.target.value)}/>
+              <input value={it.codigo||''} disabled={!editable} placeholder="Código (opcional)" onChange={e=>setIt(i,'codigo',e.target.value)} style={{fontSize:12}}/>
+            </div>
+            {editable&&<div className="lin-acts" style={{flexDirection:'column'}}>
+              <button className="lin-x" onClick={()=>movIt(i,-1)} title="Subir">↑</button>
+              <button className="lin-x" onClick={()=>movIt(i,1)} title="Bajar">↓</button>
+              <button className="lin-x" onClick={()=>delIt(i)}>Quitar</button>
+            </div>}
+          </div>
+        ))}
+        {items.length===0&&<div className="empty">Sin ítems.</div>}
+      </div>
+      {editable&&<button className="hbtn" style={{marginTop:8}} onClick={addIt}>+ Agregar ítem</button>}
+
+      <div className="det-actions" style={{marginTop:16}}>
+        <button className="btn-ghost wide" onClick={async()=>{ if(dirty&&editable){ const ok=await guardar(true); if(!ok) return; } setImprimir(true); }}>🖨️ {o.estado==='borrador'?'Vista previa':'Imprimir / PDF'}</button>
+        {editable&&<button className="btn-ghost wide" style={{marginTop:8}} disabled={busy||!dirty} onClick={()=>guardar(false)}>{busy?'Guardando…':'💾 Guardar borrador'}</button>}
+        {editable&&<button className="btn-save wide" style={{marginTop:8}} disabled={busy||cai===undefined} onClick={emitir}>✅ Emitir remito oficial</button>}
+        {editable&&<button className="lin-x" style={{marginTop:12}} onClick={descartar}>Descartar borrador</button>}
+        {puede&&o.estado==='emitido'&&<button className="lin-lost" style={{marginTop:12}} onClick={anular}>Anular remito</button>}
+      </div>
+      {imprimir&&<RemitoOficialPrint o={o} items={items} emisor={emisor} onClose={()=>setImprimir(false)}/>}
+    </div>
+  );
+}
+
+function CaiAdmin({onClose,showToast}){
+  const [lista,setLista]=useState(null);
+  const [f,setF]=useState({punto_venta:'',cai:'',cai_vto:'',nro_desde:'1',nro_hasta:'',observacion:''});
+  const [busy,setBusy]=useState(false);
+  const load=()=>sb.from('rem_cai').select('*').order('creado_en',{ascending:false}).then(r=>setLista(r.data||[]));
+  useEffect(()=>{ load(); },[]);
+  const guardar=async()=>{
+    const pv=parseInt(f.punto_venta,10), d=parseInt(f.nro_desde,10), h=parseInt(f.nro_hasta,10), c=String(f.cai).replace(/\D/g,'');
+    if(!(pv>0)) return alert('Punto de venta inválido.');
+    if(c.length!==14) return alert('El CAI tiene que tener 14 dígitos.');
+    if(!f.cai_vto) return alert('Falta la fecha de vencimiento del CAI.');
+    if(!(d>0)||!(h>=d)) return alert('Revisá el rango de numeración (desde / hasta).');
+    setBusy(true);
+    const r=await sb.from('rem_cai').insert({punto_venta:pv,cai:c,cai_vto:f.cai_vto,nro_desde:d,nro_hasta:h,proximo:d,observacion:f.observacion.trim()||null});
+    setBusy(false);
+    if(r.error) return alert('No se pudo guardar: '+r.error.message);
+    setF({punto_venta:'',cai:'',cai_vto:'',nro_desde:'1',nro_hasta:'',observacion:''}); load(); if(showToast) showToast('CAI cargado');
+  };
+  const toggle=async(c)=>{ const r=await sb.from('rem_cai').update({activo:!c.activo}).eq('id',c.id); if(r.error) alert(r.error.message); load(); };
+  const hoy=new Date().toISOString().slice(0,10);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={e=>e.stopPropagation()}>
+        <div className="sheet-head"><div className="t">CAI para remitos</div>
+          <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={onClose}>✕</button></div>
+        <div className="sheet-body">
+          <div className="rem-sub" style={{marginBottom:10}}>El CAI se pide en ARCA (clave fiscal de NEW GATE) en "Autorización de Impresión de Comprobantes". Cargá acá los datos exactamente como figuran en la autorización.</div>
+          <div className="grid2">
+            <div className="frow"><label>Punto de venta</label><input type="number" value={f.punto_venta} onChange={e=>setF({...f,punto_venta:e.target.value})}/></div>
+            <div className="frow"><label>Vencimiento CAI</label><input type="date" value={f.cai_vto} onChange={e=>setF({...f,cai_vto:e.target.value})}/></div>
+          </div>
+          <div className="frow"><label>N° de CAI (14 dígitos)</label><input value={f.cai} onChange={e=>setF({...f,cai:e.target.value})}/></div>
+          <div className="grid2">
+            <div className="frow"><label>Número desde</label><input type="number" value={f.nro_desde} onChange={e=>setF({...f,nro_desde:e.target.value})}/></div>
+            <div className="frow"><label>Número hasta</label><input type="number" value={f.nro_hasta} onChange={e=>setF({...f,nro_hasta:e.target.value})}/></div>
+          </div>
+          <div className="frow"><label>Observación</label><input value={f.observacion} onChange={e=>setF({...f,observacion:e.target.value})}/></div>
+          <button className="btn-save" disabled={busy} onClick={guardar}>{busy?'Guardando…':'Cargar CAI'}</button>
+          <div className="lin-head" style={{marginTop:16}}>Cargados</div>
+          {lista===null?<div className="spinner"/>:lista.length===0?<div className="empty">Todavía no hay CAI cargados.</div>:
+            <div className="lin-list">{lista.map(c=>{ const vencido=c.cai_vto<hoy, agotado=c.proximo>c.nro_hasta; return (
+              <div className="lin-row" key={c.id}>
+                <div className="lin-main"><div className="lin-nm">PV {String(c.punto_venta).padStart(4,'0')} · CAI {c.cai}</div>
+                  <div className="lin-sub"><span>Vence {remFecha(c.cai_vto)} · Nros {c.nro_desde}–{c.nro_hasta} · próximo {c.proximo}{vencido?' · VENCIDO':''}{agotado?' · AGOTADO':''}{!c.activo?' · desactivado':''}</span></div></div>
+                <button className="lin-x" onClick={()=>toggle(c)}>{c.activo?'Desactivar':'Activar'}</button>
+              </div>); })}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RemitosOficiales({perfil,showToast}){
+  const [lista,setLista]=useState(null);
+  const [sel,setSel]=useState(new URLSearchParams(window.location.search).get('oficial')||null);
+  const [cai,setCai]=useState(undefined);
+  const [verCai,setVerCai]=useState(false);
+  const [q,setQ]=useState('');
+  const load=()=>{ sb.from('rem_oficial').select('id,estado,fecha,punto_venta,numero,receptor_nombre,orden_compra,lugar_entrega,creado_en').order('creado_en',{ascending:false}).limit(500).then(r=>setLista(r.data||[])); sb.rpc('rem_cai_estado').then(r=>setCai(r.error?null:(r.data||null))); };
+  useEffect(()=>{ load(); },[]);
+  if(sel) return <RemitoOficialDetalle id={sel} perfil={perfil} showToast={showToast} onBack={()=>{ setSel(null); load(); }}/>;
+  const nuevo=async()=>{
+    const r=await sb.from('rem_oficial').insert({}).select('id').single();
+    if(r.error){ alert('No se pudo crear: '+r.error.message); return; }
+    setSel(r.data.id);
+  };
+  const t=q.trim().toLowerCase();
+  const vis=(lista||[]).filter(x=>!t||[x.receptor_nombre,x.orden_compra,x.lugar_entrega,remNum(x)].some(v=>String(v||'').toLowerCase().indexOf(t)>-1));
+  return (
+    <div className="rwrap">
+      <div className="page-head"><h1 className="ph-title">Remitos oficiales</h1>
+        <div style={{display:'flex',gap:8}}>
+          {remAdmin(perfil)&&<button className="btn-ghost" onClick={()=>setVerCai(true)}>⚙️ CAI</button>}
+          {remPuede(perfil)&&<button className="btn-primary" onClick={nuevo}>+ Nuevo</button>}
+        </div></div>
+      {cai===null&&<div className="empty" style={{background:'#FBEAEA',color:'#a82626',textAlign:'left',marginBottom:12}}>No hay CAI vigente: se pueden armar borradores pero no emitir.{remAdmin(perfil)?' Cargalo en ⚙️ CAI.':''}</div>}
+      {cai&&<div className="rem-sub" style={{marginBottom:12}}>CAI vigente: PV {String(cai.punto_venta).padStart(4,'0')} · vence {remFecha(cai.cai_vto)} ({cai.dias_vto} días) · quedan {cai.restantes} números</div>}
+      <div className="search"><span className="mag">⌕</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar receptor, OC, número…"/></div>
+      {lista===null?<div className="spinner"/>:vis.length===0?<div className="empty">No hay remitos oficiales.</div>:
+        <div className="rem-list">{vis.map(x=>(
+          <div className="rem-card" key={x.id} onClick={()=>setSel(x.id)}>
+            <div className="rem-main"><div className="rem-ev">{remNum(x)} · {x.receptor_nombre||'(sin receptor)'}</div>
+              <div className="rem-sub">{remFecha(x.fecha)}{x.orden_compra?(' · OC '+x.orden_compra):''}{x.lugar_entrega?(' · '+x.lugar_entrega):''}</div></div>
+            <RemChip estado={x.estado}/>
+          </div>))}</div>}
+      {verCai&&<CaiAdmin onClose={()=>{ setVerCai(false); load(); }} showToast={showToast}/>}
+    </div>
+  );
+}
+
 function Shell({perfil,user}){
   const isAdmin = perfil.rol_stock==='admin';
-  const [tab,setTab]=useState(new URLSearchParams(window.location.search).get('remito')?'remitos':'catalogo');
+  const [tab,setTab]=useState(new URLSearchParams(window.location.search).get('oficial')?'oficiales':(new URLSearchParams(window.location.search).get('remito')?'remitos':'catalogo'));
   const [toast,setToast]=useState('');
   const showToast=m=>{setToast(m);setTimeout(()=>setToast(''),2200);};
   const nombre=(perfil.nombre||user.email||'').split(' ')[0];
@@ -1265,11 +1618,13 @@ function Shell({perfil,user}){
         <button className={tab==='catalogo'?'active':''} onClick={()=>setTab('catalogo')}>Catálogo</button>
         <button className={tab==='remitos'?'active':''} onClick={()=>setTab('remitos')}>Remitos</button>
         <button className={tab==='archivados'?'active':''} onClick={()=>setTab('archivados')}>Archivados</button>
+        {remPuede(perfil)&&<button className={tab==='oficiales'?'active':''} onClick={()=>setTab('oficiales')}>Oficiales</button>}
         {isAdmin&&<button className={tab==='usuarios'?'active':''} onClick={()=>setTab('usuarios')}>Usuarios</button>}
       </div>
       {tab==='catalogo'&&<Catalogo perfil={perfil} showToast={showToast}/>}
       {tab==='remitos'&&<Remitos perfil={perfil} showToast={showToast}/>}
       {tab==='archivados'&&<Remitos perfil={perfil} showToast={showToast} archivados={true}/>}
+      {tab==='oficiales'&&remPuede(perfil)&&<RemitosOficiales perfil={perfil} showToast={showToast}/>}
       {tab==='usuarios'&&isAdmin&&<Usuarios showToast={showToast}/>}
       {toast&&<div className="toast">{toast}</div>}
     </div>
