@@ -767,6 +767,9 @@ function Remitos({perfil,showToast,archivados}){
   const [sel,setSel]=useState(null);
   const [creating,setCreating]=useState(false); const [areaFiltro,setAreaFiltro]=useState('all');
   const [fechaFiltro,setFechaFiltro]=useState(new URLSearchParams(window.location.search).get('remito')==='hoy'?'hoy':'todos');
+  const [q,setQ]=useState('');
+  const _deb=s=>(s==null?'':String(s)).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const matchQ=(r)=>{ const t=_deb(q).trim(); if(!t) return true; return [r.cliente,r.evento,r.direccion,r.numero].some(v=>_deb(v).indexOf(t)>-1); };
   const load=()=>{ let _q=sb.from('stock_remitos').select('*').order('creado_en',{ascending:false}); _q = archivados ? _q.eq('estado','cerrado').limit(500) : _q.neq('estado','cerrado').limit(1000); return _q.then(({data})=>setRemitos(data||[])); };
   useEffect(()=>{ load(); },[])
   // Auto-refresco suave cada 60s: recarga el tablero si no hay un remito/modal
@@ -797,19 +800,20 @@ function Remitos({perfil,showToast,archivados}){
   ); };
 
   if(archivados){
-    const arch=(remitos||[]).filter(x=>x.estado==='cerrado');
+    const arch=(remitos||[]).filter(x=>x.estado==='cerrado' && matchQ(x));
     return (
       <div className="rwrap">
         <div className="page-head"><h1 className="ph-title">Archivados</h1></div>
+        <div className="search"><span className="mag">⌕</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente, evento o dirección…"/></div>
         {remitos===null?<div className="spinner"/>:
-         arch.length===0?<div className="empty">Todavía no hay remitos archivados.</div>:
+         arch.length===0?<div className="empty">{_deb(q).trim()?'No hay archivados que coincidan con la búsqueda.':'Todavía no hay remitos archivados.'}</div>:
          <div className="rem-list">{arch.map(card)}</div>}
       </div>
     );
   }
 
-  const activos=(remitos||[]).filter(x=>x.estado!=='cerrado' && (areaFiltro==='all'||x.area===areaFiltro) && pasaFiltroFecha(x,fechaFiltro));
-  const nRetras=(remitos||[]).filter(x=>x.estado!=='cerrado' && (areaFiltro==='all'||x.area===areaFiltro) && columnaDe(x)==='devolucion').length;
+  const activos=(remitos||[]).filter(x=>x.estado!=='cerrado' && (areaFiltro==='all'||x.area===areaFiltro) && pasaFiltroFecha(x,fechaFiltro) && matchQ(x));
+  const nRetras=(remitos||[]).filter(x=>x.estado!=='cerrado' && (areaFiltro==='all'||x.area===areaFiltro) && columnaDe(x)==='devolucion' && matchQ(x)).length;
   const col={preparacion:[],evento:[],devolucion:[]};
   activos.forEach(x=>{ const c=columnaDe(x); if(col[c]) col[c].push(x); });
   const columnas=[{key:'preparacion',tit:'Preparación'},{key:'evento',tit:'En Evento'},{key:'devolucion',tit:'Devolución'}];
@@ -817,6 +821,7 @@ function Remitos({perfil,showToast,archivados}){
     <div className="rwrap">
       <div className="page-head"><h1 className="ph-title">Remitos</h1>
         <button className="btn-primary" onClick={()=>setCreating(true)}>+ Nuevo</button></div>
+      <div className="search"><span className="mag">⌕</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente, evento o dirección…"/></div>
       <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',margin:'0 0 14px'}}><span style={{fontSize:12,color:'#888',marginRight:2}}>Área</span>{[{k:'all',n:'Todas',c:null},{k:'sonido',n:'Sonido',c:'#EF7D22'},{k:'iluminacion',n:'Iluminación',c:'#E5322B'},{k:'video',n:'Video',c:'#6B4F2A'},{k:'generacion',n:'Generación',c:'#0B7A3B'},{k:'escenario',n:'Escenario',c:'#8E44AD'},{k:'produccion',n:'Producción',c:'#D6337A'},{k:'logistica',n:'Logística',c:'#F1C40F'},{k:'inalambricos',n:'Inalámbricos',c:'#12B0C4'}].map(function(f){ return (<button key={f.k} type="button" onClick={function(){ setAreaFiltro(f.k); }} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:999,border:areaFiltro===f.k?'1px solid #111':'1px solid #d0d0d0',background:areaFiltro===f.k?'#111':'#fff',color:areaFiltro===f.k?'#fff':'#555',fontSize:13,cursor:'pointer'}}>{f.c?<span style={{width:9,height:9,borderRadius:'50%',background:f.c,display:'inline-block'}}></span>:null}{f.n}</button>); })}</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',margin:'0 0 14px'}}><span style={{fontSize:12,color:'#888',marginRight:2}}>Fecha</span>{[{k:'todos',n:'Todos'},{k:'hoy',n:'Hoy'},{k:'semana',n:'Esta semana'},{k:'mes',n:'Este mes'}].map(function(f){ return (<button key={f.k} type="button" onClick={function(){ setFechaFiltro(f.k); }} style={{padding:'6px 12px',borderRadius:999,border:'1px solid '+(fechaFiltro===f.k?'#111':'#ddd'),background:fechaFiltro===f.k?'#111':'#fff',color:fechaFiltro===f.k?'#fff':'#555',fontSize:13,cursor:'pointer'}}>{f.n}</button>); })}<button type="button" onClick={function(){ setFechaFiltro(fechaFiltro==='retrasado'?'todos':'retrasado'); }} style={{padding:'6px 12px',borderRadius:999,border:'1px solid '+(fechaFiltro==='retrasado'?'#a82626':'#f0c9c9'),background:fechaFiltro==='retrasado'?'#a82626':'#FBEAEA',color:fechaFiltro==='retrasado'?'#fff':'#a82626',fontSize:13,cursor:'pointer',fontWeight:600}}>{'Retrasado ('+nRetras+')'}</button></div>
           {remitos===null?<div className="spinner"/>:
