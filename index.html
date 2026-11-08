@@ -923,6 +923,8 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   const [subiendoAdj,setSubiendoAdj]=useState(false);
   const [editH,setEditH]=useState(false);
   const [hd,setHd]=useState({evento:'',cliente:'',direccion:'',desde:'',hasta:''});
+  const [reubic,setReubic]=useState(null);   // {tipo,code,u,p,lineaX,remitoX,maxQty,futuro,masRemitos}
+  const [reubicQty,setReubicQty]=useState('1');
   const inputRef=useRef(null);
   const armando=r.estado==='pendiente';
   const enEvento=r.estado==='en_evento';
@@ -950,10 +952,86 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   const aviso=m=>{ if(showToast) showToast(m); else alert(m); };
 
   const _cesc=x=>String(x==null?'':x).replace(/[%_\\]/g,function(m){return '\\'+m;});
+  // ¿El remito de origen todavía no salió (reservado a futuro)?
+  const esFuturo=(rx)=>{
+    if(!rx) return false;
+    if(rx.estado==='pendiente'||rx.estado==='preparado') return true;
+    const hoy=new Date().toISOString().slice(0,10);
+    if(rx.fecha_desde && String(rx.fecha_desde).slice(0,10)>hoy) return true;
+    if(rx.fecha_hasta && String(rx.fecha_hasta).slice(0,10)>hoy) return true;
+    return false;
+  };
+  // Si el remito de origen quedó sin pendientes y estaba incompleto/cerrado, pasa a cerrado (igual que el resto de la app)
+  const maybeCerrar=async(remId)=>{
+    const {data:ls}=await sb.from('stock_remito_lineas').select('devuelto').eq('remito_id',remId);
+    const restantes=(ls||[]).filter(x=>!x.devuelto).length;
+    const {data:rr}=await sb.from('stock_remitos').select('estado').eq('id',remId).maybeSingle();
+    if(restantes===0 && rr && (rr.estado==='incompleto'||rr.estado==='cerrado')){
+      await sb.from('stock_remitos').update({estado:'cerrado'}).eq('id',remId);
+    }
+  };
+  // Salida granel "normal" (tomar de stock libre)
+  const salidaGranelNormal=async(p,qtyDefault)=>{
+    const qty=Number(prompt('Cantidad de "'+p.nombre+'" a sacar:',String(qtyDefault||1)))||0;
+    if(qty>0){
+      await sb.from('stock_remito_lineas').insert({remito_id:r.id,producto_id:p.id,cantidad:qty,fecha_salida:new Date().toISOString()});
+      await logHist({producto_id:p.id,accion:'salida',detalle:'Salida x'+qty+' — '+(r.evento||'remito')});
+      loadLineas();
+    }
+  };
+  // Mover un equipo que seguía afuera: devolver del remito X y dar salida acá, dejando rastro en el historial
+  const moverDesdeRemito=async(payload,cantidad)=>{
+    const now=new Date().toISOString();
+    const evX=(payload.remitoX&&payload.remitoX.evento)||'remito';
+    const evY=(r.evento||'remito');
+    if(payload.tipo==='unidad'){
+      await sb.from('stock_remito_lineas').update({devuelto:true,fecha_devolucion:now}).eq('id',payload.lineaX.id);
+      await sb.from('stock_unidades').update({estado:'disponible'}).eq('id',payload.u.id);
+      await sb.from('stock_historial').insert({empresa_id:EMPRESA_ID,unidad_id:payload.u.id,producto_id:payload.u.producto_id,remito_id:payload.remitoX.id,accion:'devolucion',detalle:'Devolución — movido a '+evY,usuario_id:userId});
+      await maybeCerrar(payload.remitoX.id);
+      await sb.from('stock_remito_lineas').insert({remito_id:r.id,unidad_id:payload.u.id,producto_id:payload.u.producto_id,cantidad:1,fecha_salida:now});
+      await sb.from('stock_unidades').update({estado:'en_evento'}).eq('id',payload.u.id);
+      await sb.from('stock_historial').insert({empresa_id:EMPRESA_ID,unidad_id:payload.u.id,producto_id:payload.u.producto_id,remito_id:r.id,accion:'salida',detalle:'Salida — '+evY+' (movido de '+evX+')',usuario_id:userId});
+    } else {
+      const l=payload.lineaX;
+      const M=Math.min(Math.max(1,Number(cantidad)||0), payload.maxQty);
+      const nuevaDev=Math.min((Number(l.cantidad_devuelta)||0)+M, Number(l.cantidad)||0);
+      const completo=nuevaDev>=(Number(l.cantidad)||0);
+      await sb.from('stock_remito_lineas').update({cantidad_devuelta:nuevaDev,devuelto:completo,fecha_devolucion:completo?now:null}).eq('id',l.id);
+      await sb.from('stock_historial').insert({empresa_id:EMPRESA_ID,producto_id:payload.p.id,remito_id:payload.remitoX.id,accion:'devolucion',detalle:'Devolución '+M+' u — movido a '+evY,usuario_id:userId});
+      await maybeCerrar(payload.remitoX.id);
+      await sb.from('stock_remito_lineas').insert({remito_id:r.id,producto_id:payload.p.id,cantidad:M,fecha_salida:now});
+      await sb.from('stock_historial').insert({empresa_id:EMPRESA_ID,producto_id:payload.p.id,remito_id:r.id,accion:'salida',detalle:'Salida x'+M+' — '+evY+' (movido de '+evX+')',usuario_id:userId});
+    }
+    loadLineas();
+  };
+  const confirmReubic=async()=>{
+    const payload=reubic; if(!payload) return;
+    let m=1;
+    if(payload.tipo==='granel'){ m=Math.min(Math.max(1,Number(reubicQty)||0), payload.maxQty); if(m<=0) return; }
+    setReubic(null);
+    try{ await moverDesdeRemito(payload,m); if(showToast) showToast('Movido desde '+((payload.remitoX&&payload.remitoX.evento)||'otro remito')); }
+    catch(e){ alert('No se pudo mover: '+(e&&e.message?e.message:e)); }
+  };
+  const cancelReubic=async()=>{
+    const payload=reubic; setReubic(null);
+    if(payload && payload.tipo==='granel' && payload.p){
+      try{ await salidaGranelNormal(payload.p,1); }catch(e){ /* nada */ }
+    }
+  };
+
   const scanSalida=async(c)=>{
     const {data:u}=await sb.from('stock_unidades').select('id,codigo,estado,producto_id,activo').ilike('codigo',_cesc(c)).eq('activo',true).limit(1).maybeSingle();
     if(u){
-      if(u.estado==='en_evento'){ aviso('Ya en un evento: '+c); return; }
+      if(u.estado==='en_evento'){
+        // La unidad todavía figura afuera: buscamos de qué remito y ofrecemos moverla
+        const {data:lx}=await sb.from('stock_remito_lineas').select('id,remito_id,unidad_id,producto_id').eq('unidad_id',u.id).eq('devuelto',false).limit(1).maybeSingle();
+        if(!lx){ aviso('Figura en evento pero no encuentro el remito de origen: '+c); return; }
+        if(lx.remito_id===r.id){ aviso('Ya está en este remito: '+c); return; }
+        const {data:rx}=await sb.from('stock_remitos').select('id,evento,estado,fecha_desde,fecha_hasta,creado_en').eq('id',lx.remito_id).maybeSingle();
+        setReubic({tipo:'unidad',code:c,u:u,lineaX:lx,remitoX:rx||{id:lx.remito_id},futuro:esFuturo(rx)});
+        return;
+      }
       await sb.from('stock_remito_lineas').insert({remito_id:r.id,unidad_id:u.id,producto_id:u.producto_id,cantidad:1,fecha_salida:new Date().toISOString()});
       await sb.from('stock_unidades').update({estado:'en_evento'}).eq('id',u.id);
       await logHist({unidad_id:u.id,accion:'salida',detalle:'Salida — '+(r.evento||'remito')});
@@ -963,12 +1041,21 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
     const r1=await sb.from('stock_productos').select('id,nombre,codigo_granel,codigo_producto').ilike('codigo_granel',_cesc(c)).limit(1).maybeSingle(); p=r1.data;
     if(!p){ const r2=await sb.from('stock_productos').select('id,nombre,codigo_granel,codigo_producto').ilike('codigo_producto',_cesc(c)).limit(1).maybeSingle(); p=r2.data; }
     if(p){
-      const qty=Number(prompt('Cantidad de "'+p.nombre+'" a sacar:','1'))||0;
-      if(qty>0){
-        await sb.from('stock_remito_lineas').insert({remito_id:r.id,producto_id:p.id,cantidad:qty,fecha_salida:new Date().toISOString()});
-        await logHist({producto_id:p.id,accion:'salida',detalle:'Salida x'+qty+' — '+(r.evento||'remito')});
-        loadLineas();
+      // ¿Hay cantidad de este producto sin devolver en OTRO remito abierto?
+      const {data:out}=await sb.from('stock_remito_lineas').select('id,remito_id,cantidad,cantidad_devuelta,producto_id,devuelto').eq('producto_id',p.id).eq('devuelto',false);
+      const pend=(out||[]).filter(x=>x.remito_id!==r.id && ((Number(x.cantidad)||0)-(Number(x.cantidad_devuelta)||0))>0);
+      if(pend.length){
+        const ids=[...new Set(pend.map(x=>x.remito_id))];
+        const {data:rxs}=await sb.from('stock_remitos').select('id,evento,estado,fecha_desde,fecha_hasta,creado_en').in('id',ids);
+        const rxSorted=(rxs||[]).slice().sort((a,b)=>String(a.creado_en||'').localeCompare(String(b.creado_en||'')));
+        const rx=rxSorted[0]||{id:ids[0]};
+        const lx=pend.find(x=>x.remito_id===rx.id);
+        const maxQty=(Number(lx.cantidad)||0)-(Number(lx.cantidad_devuelta)||0);
+        setReubicQty(String(maxQty));
+        setReubic({tipo:'granel',code:c,p:p,lineaX:lx,remitoX:rx,maxQty:maxQty,futuro:esFuturo(rx),masRemitos:ids.length>1});
+        return;
       }
+      await salidaGranelNormal(p,1);
       return;
     }
     aviso('No encontrado: '+c);
@@ -1153,6 +1240,43 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
         {remPuede(perfil)&&<button className="btn-ghost wide" style={{marginTop:8,borderColor:'#1d3b6e',color:'#1d3b6e'}} onClick={generarOficial} disabled={genOf}>{genOf?'Creando…':(oficiales.length?'🧾 Generar otro remito oficial':'🧾 Generar remito oficial')}</button>}
       </div>
       {imprimir&&<RemitoPrint r={r} lineas={lineas} onClose={()=>setImprimir(false)}/>}
+      {reubic&&(
+        <div className="overlay" onClick={()=>setReubic(null)}>
+          <div className="sheet" onClick={e=>e.stopPropagation()} style={{maxWidth:460}}>
+            <div className="sheet-head"><div className="t">Equipo todavía en otro evento</div>
+              <button className="icon-btn" style={{background:'#F1F3F5',color:'#444'}} onClick={()=>setReubic(null)}>✕</button></div>
+            <div className="sheet-body">
+              <p style={{margin:'0 0 12px',fontSize:14.5}}>El equipo <b>{reubic.tipo==='unidad'?reubic.code:((reubic.p&&reubic.p.nombre)||reubic.code)}</b> todavía figura <b>sin devolver</b> en:</p>
+              <div style={{background:'#F7F7F4',border:'1px solid #E6E4DD',borderRadius:10,padding:'12px 14px',marginBottom:12}}>
+                <div style={{fontWeight:700,fontSize:15}}>{(reubic.remitoX&&reubic.remitoX.evento)||'(remito sin nombre)'}</div>
+                <div style={{fontSize:12.5,color:'#888',marginTop:2}}>
+                  {remEstLabel((reubic.remitoX&&reubic.remitoX.estado)||'')}
+                  {(reubic.remitoX&&(reubic.remitoX.fecha_desde||reubic.remitoX.fecha_hasta))?(' · '+[reubic.remitoX.fecha_desde,reubic.remitoX.fecha_hasta].filter(Boolean).map(d=>String(d).slice(0,10).split('-').reverse().join('/')).join(' → ')):''}
+                </div>
+                {reubic.tipo==='granel'&&(
+                  <div style={{fontSize:13,color:'#444',marginTop:6}}>Sin devolver: <b>{reubic.maxQty}</b> u.{reubic.masRemitos?' (hay más en otros remitos)':''}</div>
+                )}
+              </div>
+              {reubic.futuro&&(
+                <div style={{background:'#FDECEC',border:'1px solid #F3B7B3',color:'#A82626',borderRadius:10,padding:'10px 12px',marginBottom:12,fontSize:13}}>
+                  ⚠ <b>Ojo:</b> ese evento todavía no salió. Si sacás el equipo de ahí, <b>ese evento queda sin este equipo</b>.
+                </div>
+              )}
+              {reubic.tipo==='granel'&&(
+                <div className="frow" style={{marginBottom:12}}>
+                  <label>¿Cuántas mover? (máx {reubic.maxQty})</label>
+                  <input type="number" min="1" max={reubic.maxQty} value={reubicQty} onChange={e=>setReubicQty(e.target.value)}/>
+                </div>
+              )}
+              <p style={{margin:'0 0 4px',fontSize:14.5}}>¿Devolverlo de ahí y agregarlo a <b>este</b> remito?</p>
+            </div>
+            <div className="save-bar">
+              <button className="btn-ghost" onClick={cancelReubic}>{reubic.tipo==='granel'?'No, tomar de stock':'No'}</button>
+              <button className="btn-save" onClick={confirmReubic}>Sí, devolver y mover</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="adj-box">
         <div className="adj-title">📎 Adjunto (lista / archivo)</div>
