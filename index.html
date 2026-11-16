@@ -1739,6 +1739,102 @@ function RemitosOficiales({perfil,showToast}){
   );
 }
 
+/* ====== CONSULTA DE DISPONIBILIDAD ====== */
+function fechaMas(diasStr,n){ const d=new Date(diasStr+'T00:00:00'); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function Disponibilidad({perfil,showToast}){
+  const [desde,setDesde]=useState(todayStr());
+  const [hasta,setHasta]=useState(fechaMas(todayStr(),7));
+  const [q,setQ]=useState('');
+  const [necesito,setNecesito]=useState('');
+  const [rows,setRows]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [det,setDet]=useState({});
+  const [openP,setOpenP]=useState(null);
+
+  const consultar=async()=>{
+    if(!desde||!hasta){ alert('Elegí fecha desde y hasta.'); return; }
+    if(desde>hasta){ alert('La fecha "desde" no puede ser posterior a "hasta".'); return; }
+    setLoading(true); setOpenP(null); setDet({});
+    const {data,error}=await sb.rpc('stock_disp_rango',{p_desde:desde,p_hasta:hasta,p_texto:q.trim()||null});
+    if(error){ setLoading(false); alert('No se pudo consultar: '+error.message); return; }
+    setRows(data||[]); setLoading(false);
+  };
+  const verDetalle=async(p)=>{
+    if(openP===p.producto_id){ setOpenP(null); return; }
+    setOpenP(p.producto_id);
+    if(det[p.producto_id]===undefined){
+      setDet(d=>({...d,[p.producto_id]:null}));
+      const {data}=await sb.rpc('stock_disp_detalle',{p_desde:desde,p_hasta:hasta,p_producto:p.producto_id});
+      setDet(d=>({...d,[p.producto_id]:data||[]}));
+    }
+  };
+  const need=Math.max(0,Math.floor(Number(necesito)||0));
+  return (
+    <div className="page">
+      <div className="page-head"><h1>Disponibilidad</h1></div>
+      <div style={{background:'#fff',border:'1px solid #e6e6ef',borderRadius:12,padding:14,marginBottom:14}}>
+        <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'flex-end'}}>
+          <div style={{display:'flex',flexDirection:'column',gap:4}}><label style={{fontSize:12,fontWeight:700,color:'#555'}}>Desde</label>
+            <input type="date" value={desde} onChange={e=>setDesde(e.target.value)} style={{padding:'8px 10px',border:'1px solid #cfd3e0',borderRadius:8}}/></div>
+          <div style={{display:'flex',flexDirection:'column',gap:4}}><label style={{fontSize:12,fontWeight:700,color:'#555'}}>Hasta</label>
+            <input type="date" value={hasta} onChange={e=>setHasta(e.target.value)} style={{padding:'8px 10px',border:'1px solid #cfd3e0',borderRadius:8}}/></div>
+          <div style={{display:'flex',flexDirection:'column',gap:4,flex:'1 1 220px'}}><label style={{fontSize:12,fontWeight:700,color:'#555'}}>Equipo (nombre o código) — vacío = todo lo ocupado</label>
+            <input type="text" value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')consultar();}} placeholder="Ej: pantalla, SM58, PANT01…" style={{padding:'8px 10px',border:'1px solid #cfd3e0',borderRadius:8}}/></div>
+          <div style={{display:'flex',flexDirection:'column',gap:4,width:120}}><label style={{fontSize:12,fontWeight:700,color:'#555'}}>¿Cuántas necesitás?</label>
+            <input type="number" min="0" value={necesito} onChange={e=>setNecesito(e.target.value)} placeholder="opcional" style={{padding:'8px 10px',border:'1px solid #cfd3e0',borderRadius:8}}/></div>
+          <button className="btn-primary" onClick={consultar} disabled={loading} style={{height:38}}>{loading?'Consultando…':'Consultar'}</button>
+        </div>
+        <div style={{fontSize:12,color:'#888',marginTop:8}}>Resta del disponible: lo que está en <b>remitos</b> (por salir / en evento / a devolver) y los <b>presupuestos confirmados sin remito</b>, que se superpongan con esas fechas. Los presupuestos sin confirmar (reservado / enviado / presupuesto) se muestran aparte como <b>tentativo</b> y no restan. Lo devuelto o cerrado queda libre.</div>
+      </div>
+      {loading? <div className="spinner"/> :
+       rows===null? <div className="empty">Elegí fechas y tocá <b>Consultar</b>.</div> :
+       rows.length===0? <div className="empty">{q.trim()?'No hay equipos que coincidan.':'No hay nada ocupado en ese período.'}</div> :
+       <div className="list">{rows.map(p=>{
+         const falta=need>0 && p.disponible<need;
+         const sin=p.disponible<=0;
+         const col=sin?'#c0392b':(falta?'#b5561f':'#1a7d4f');
+         const dd=det[p.producto_id];
+         return (
+          <div key={p.producto_id} style={{background:'#fff',border:'1px solid '+(sin||falta?'#f0c9c2':'#e6e6ef'),borderRadius:12,padding:'10px 14px',marginBottom:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,cursor:'pointer'}} onClick={()=>verDetalle(p)}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700}}>{p.nombre}</div>
+                <div style={{fontSize:12,color:'#888'}}>{p.area_nombre||'—'}{p.codigo?(' · '+p.codigo):''} · {p.tipo_control==='serializado'?'Serializado':'Granel'}</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:20,fontWeight:800,color:col,lineHeight:1}}>{p.disponible} <small style={{fontSize:12,fontWeight:600,color:'#999'}}>de {p.total}</small></div>
+                <div style={{fontSize:12,color:'#999'}}>{(p.ocupado+p.comprometido)>0?('ocupadas '+(p.ocupado+p.comprometido)):'libre'}</div>
+              </div>
+              <span style={{color:'#bbb',fontSize:12}}>{openP===p.producto_id?'▲':'▼'}</span>
+            </div>
+            {sin&&<div style={{marginTop:6,fontSize:12,fontWeight:700,color:'#c0392b'}}>⚠ Sin stock en ese período.</div>}
+            {!sin&&falta&&<div style={{marginTop:6,fontSize:12,fontWeight:700,color:'#b5561f'}}>⚠ Faltan {need-p.disponible} (necesitás {need}, hay {p.disponible}).</div>}
+            {(p.ocupado>0||p.comprometido>0||p.tentativo>0)&&
+              <div style={{marginTop:6,display:'flex',flexWrap:'wrap',gap:6,fontSize:11}}>
+                {p.ocupado>0&&<span style={{background:'#eef0f5',color:'#555',borderRadius:6,padding:'2px 7px'}}>en remito: {p.ocupado}</span>}
+                {p.comprometido>0&&<span style={{background:'#fbeae1',color:'#b5561f',borderRadius:6,padding:'2px 7px'}}>confirmado sin remito: {p.comprometido} (resta)</span>}
+                {p.tentativo>0&&<span style={{background:'#fdf6e3',color:'#9a7b1e',borderRadius:6,padding:'2px 7px'}}>tentativo: {p.tentativo} (presup. sin confirmar · no resta)</span>}
+              </div>}
+            {openP===p.producto_id&&
+              <div style={{marginTop:8,borderTop:'1px dashed #e6e6ef',paddingTop:8}}>
+                {dd===undefined||dd===null? <div style={{fontSize:12,color:'#999'}}>Cargando…</div> :
+                 dd.length===0? <div style={{fontSize:12,color:'#999'}}>Nada ocupado ni reservado en este período.</div> :
+                 <div>{dd.map((r,i)=>{
+                   const tc=r.tipo==='remito'?'#555':(r.tipo==='confirmado'?'#b5561f':'#9a7b1e');
+                   const tl=r.tipo==='remito'?'Remito':(r.tipo==='confirmado'?'Confirmado s/remito':'Tentativo');
+                   return (
+                   <div key={i} style={{display:'flex',justifyContent:'space-between',gap:10,fontSize:12,padding:'4px 0',borderBottom:'1px solid #f3f3f8'}}>
+                     <span style={{color:'#333',minWidth:0}}><b style={{color:tc}}>{tl}</b> · {r.evento||r.cliente||'(sin evento)'} <span style={{color:'#aaa'}}>· {r.ref}</span></span>
+                     <span style={{color:'#666',whiteSpace:'nowrap'}}>{remFecha(r.fecha_desde)}→{remFecha(r.fecha_hasta)} · {r.cantidad} u.</span>
+                   </div>);
+                 })}</div>}
+              </div>}
+          </div>);
+       })}</div>}
+    </div>
+  );
+}
+
 function Shell({perfil,user}){
   const isAdmin = perfil.rol_stock==='admin';
   const [tab,setTab]=useState(new URLSearchParams(window.location.search).get('oficial')?'oficiales':(new URLSearchParams(window.location.search).get('remito')?'remitos':'catalogo'));
@@ -1757,12 +1853,14 @@ function Shell({perfil,user}){
       <div className="nav">
         <button className={tab==='catalogo'?'active':''} onClick={()=>setTab('catalogo')}>Catálogo</button>
         <button className={tab==='remitos'?'active':''} onClick={()=>setTab('remitos')}>Remitos</button>
+        <button className={tab==='disponibilidad'?'active':''} onClick={()=>setTab('disponibilidad')}>Disponibilidad</button>
         <button className={tab==='archivados'?'active':''} onClick={()=>setTab('archivados')}>Archivados</button>
         {remPuede(perfil)&&<button className={tab==='oficiales'?'active':''} onClick={()=>setTab('oficiales')}>Oficiales</button>}
         {isAdmin&&<button className={tab==='usuarios'?'active':''} onClick={()=>setTab('usuarios')}>Usuarios</button>}
       </div>
       {tab==='catalogo'&&<Catalogo perfil={perfil} showToast={showToast}/>}
       {tab==='remitos'&&<Remitos perfil={perfil} showToast={showToast}/>}
+      {tab==='disponibilidad'&&<Disponibilidad perfil={perfil} showToast={showToast}/>}
       {tab==='archivados'&&<Remitos perfil={perfil} showToast={showToast} archivados={true}/>}
       {tab==='oficiales'&&remPuede(perfil)&&<RemitosOficiales perfil={perfil} showToast={showToast}/>}
       {tab==='usuarios'&&isAdmin&&<Usuarios showToast={showToast}/>}
@@ -1975,10 +2073,12 @@ function UnitRow({u,canEdit,logHist,onChanged}){
   const [estado,setEstado]=useState(u.estado||'disponible');
   const [obs,setObs]=useState('');
   const [hist,setHist]=useState(null);
+  const [rem,setRem]=useState(null);
   const [busy,setBusy]=useState(false);
   const loadHist=()=>sb.from('stock_historial').select('accion,detalle,creado_en')
     .eq('unidad_id',u.id).order('creado_en',{ascending:false}).limit(20).then(({data})=>setHist(data||[]));
-  const toggle=()=>{ const n=!open; setOpen(n); if(n&&hist===null) loadHist(); };
+  const loadRem=()=>sb.rpc('stock_unidad_remitos',{p_unidad:u.id}).then(({data})=>setRem(data||[]));
+  const toggle=()=>{ const n=!open; setOpen(n); if(n&&hist===null) loadHist(); if(n&&rem===null) loadRem(); };
   const guardar=async()=>{
     setBusy(true);
     const patch={}; const cambios=[];
@@ -2025,6 +2125,17 @@ function UnitRow({u,canEdit,logHist,onChanged}){
                 <button className="btn-save" disabled={busy} onClick={guardar}>{busy?'…':'Guardar unidad'}</button>
               </div>
             </div>}
+          <div className="hist"><div className="hist-t">En qué remitos estuvo</div>
+            {rem===null?<div className="hist-empty">…</div>:
+             !rem.length?<div className="hist-empty">Nunca salió en un remito.</div>:
+             <div>{rem.map((r,i)=>(
+               <div className="hist-i" key={i} style={{alignItems:'flex-start'}}>
+                 <span className="d">{r.fecha_salida?fechaCorta(r.fecha_salida):remFecha(r.fecha_desde)}</span>
+                 <span>{r.evento||r.cliente||'(sin evento)'} <span style={{color:'#aaa'}}>· remito {r.numero}</span><br/>
+                   <span style={{fontSize:11,color:'#999'}}>{remFecha(r.fecha_desde)}→{remFecha(r.fecha_hasta)} · {r.devuelto?('devuelto '+(r.fecha_devolucion?fechaCorta(r.fecha_devolucion):'')):(r.estado==='cerrado'?'cerrado':'afuera')}</span></span>
+               </div>
+             ))}</div>}
+          </div>
           <div className="hist"><div className="hist-t">Historial</div><HistList hist={hist}/></div>
         </div>}
     </div>
