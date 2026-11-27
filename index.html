@@ -1165,8 +1165,25 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
   };
   const reabrirRemito=async()=>{
     if(!confirm('¿Reabrir este remito? Vuelve a quedar activo (En preparación) para seguir trabajándolo. Los equipos que ya estaban cargados siguen igual.')) return;
-    await sb.from('stock_remitos').update({estado:'pendiente'}).eq('id',r.id);
-    setR(prev=>({...prev,estado:'pendiente'})); if(showToast) showToast('Remito reabierto');
+    const upd={estado:'pendiente'};
+    try{
+      if(r.evento_id){
+        const _ev=await sb.from('evento').select('fecha_montaje,fecha_evento,fecha_evento_fin,fecha_desmontaje').eq('id',r.evento_id).single();
+        if(_ev && _ev.data){ const _d=_ev.data; const _desde=_d.fecha_montaje||_d.fecha_evento; const _hasta=_d.fecha_desmontaje||_d.fecha_evento_fin||_d.fecha_evento||_desde; if(_desde) upd.fecha_desde=_desde; if(_hasta) upd.fecha_hasta=_hasta; }
+      }
+    }catch(_e){}
+    await sb.from('stock_remitos').update(upd).eq('id',r.id);
+    setR(prev=>({...prev,...upd})); if(showToast) showToast(upd.fecha_desde?'Remito reabierto · fecha actualizada al evento':'Remito reabierto');
+  };
+
+  const editarFechasRemito=async()=>{
+    const _f=(x)=>x?String(x).slice(0,10):'';
+    const _d1=prompt('Fecha DESDE (AAAA-MM-DD):', _f(r.fecha_desde)); if(_d1===null) return;
+    const _d2=prompt('Fecha HASTA (AAAA-MM-DD):', _f(r.fecha_hasta||_d1)); if(_d2===null) return;
+    const _ok=(x)=>/^\d{4}-\d{2}-\d{2}$/.test(x);
+    if(!_ok(_d1)||!_ok(_d2)){ alert('Formato inválido. Usá AAAA-MM-DD, por ejemplo 2026-11-27.'); return; }
+    await sb.from('stock_remitos').update({fecha_desde:_d1,fecha_hasta:_d2}).eq('id',r.id);
+    setR(prev=>({...prev,fecha_desde:_d1,fecha_hasta:_d2})); if(showToast) showToast('Fechas actualizadas');
   };
 
   const cerrarRemito=async()=>{
@@ -1390,10 +1407,12 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
       </div>}
       {incompleto&&<div className="det-actions">
         {puedeGestion&&<button className="btn-ghost wide" onClick={reabrirRemito}>↩ Reabrir remito</button>}
+        {puedeGestion&&<button className="btn-ghost wide" style={{marginTop:8}} onClick={editarFechasRemito}>✎ Editar fechas</button>}
         {esGestion&&<button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito</button>}
       </div>}
       {r.estado==='cerrado'&&<div className="det-actions">
         {puedeGestion&&<button className="btn-ghost wide" onClick={reabrirRemito}>↩ Reabrir remito</button>}
+        {puedeGestion&&<button className="btn-ghost wide" style={{marginTop:8}} onClick={editarFechasRemito}>✎ Editar fechas</button>}
         {esGestion&&<button className="btn-danger wide" style={{marginTop:8}} onClick={descartarRemito}>Descartar remito (borrar)</button>}
       </div>}
     </div>
