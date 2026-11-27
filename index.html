@@ -1270,7 +1270,7 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
         <button className="btn-ghost wide" onClick={()=>setImprimir(true)}>🖨️ Imprimir / PDF</button>
         {puedePresu&&<button className="btn-ghost wide" style={{marginTop:8,borderColor:'#0e6e5e',color:'#0e6e5e'}} onClick={generarPresupuesto} disabled={genPres}>{genPres?'Generando…':'📄 Generar presupuesto'}</button>}{!r.evento_id&&<button className="btn-ghost wide" style={{marginTop:8,borderColor:'#7a4fd6',color:'#7a4fd6'}} onClick={openAdoptar}>🔗 Adoptar a evento</button>}
         {oficiales.map(function(x){ return <button key={x.id} className="btn-ghost wide" style={{marginTop:8,borderColor:'#1d3b6e',color:'#1d3b6e'}} onClick={()=>setVerOficial(x.id)}>🧾 Remito oficial {remNum(x)} · {(REM_EST[x.estado]||{}).txt}</button>; })}
-        {remPuede(perfil)&&<button className="btn-ghost wide" style={{marginTop:8,borderColor:'#1d3b6e',color:'#1d3b6e'}} onClick={generarOficial} disabled={genOf}>{genOf?'Creando…':(oficiales.length?'🧾 Generar otro remito oficial':'🧾 Generar remito oficial')}</button>}
+        {remPuede(perfil)&&<button className="btn-ghost wide" style={{marginTop:8,borderColor:'#1d3b6e',color:'#1d3b6e'}} onClick={generarOficial} disabled={genOf||!REM_OFICIAL_ON} title={REM_OFICIAL_ON?'':REM_OFICIAL_MSG}>{!REM_OFICIAL_ON?'🧾 Remito oficial (deshabilitado por ahora)':(genOf?'Creando…':(oficiales.length?'🧾 Generar otro remito oficial':'🧾 Generar remito oficial'))}</button>}
       </div>
       {imprimir&&<RemitoPrint r={r} lineas={lineas} onClose={()=>setImprimir(false)}/>}
       {reubic&&(
@@ -1424,7 +1424,11 @@ function RemitoDetalle({remito,perfil,showToast,onBack}){
 // Los remitos oficiales NO mueven stock: son el comprobante legal del traslado.
 // Se crean como borrador (a mano, desde un remito interno o desde Facturación),
 // y al emitir el sistema les asigna el número correlativo del CAI vigente.
-const remPuede=p=>!!(p&&((p.rol_stock==='admin'||p.rol_stock==='jefe_area')||p.puede_facturacion));
+// Remito oficial: lo puede pedir cualquiera que hace remitos en Stock (Carlos 27/11/2026)
+const remPuede=p=>!!(p&&(p.puede_stock||p.rol_stock==='admin'||p.rol_stock==='jefe_area'||p.puede_facturacion));
+// PAUSADO (Carlos 27/11/2026): falta un paso en ARCA. Los botones se ven pero no se pueden usar. Para habilitar: true (y rem_habilitado() en la base).
+const REM_OFICIAL_ON=false;
+const REM_OFICIAL_MSG='Remito oficial deshabilitado por ahora (falta completar el alta en ARCA)';
 const remAdmin=p=>!!(p&&p.rol_stock==='admin');
 const remNum=o=>(o&&o.numero!=null)?(String(o.punto_venta||0).padStart(4,'0')+'-'+String(o.numero).padStart(8,'0')):'BORRADOR';
 const remFecha=d=>{ if(!d) return '—'; const p=String(d).slice(0,10).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):d; };
@@ -1660,7 +1664,7 @@ function RemitoOficialDetalle({id,perfil,showToast,onBack}){
       <div className="det-actions" style={{marginTop:16}}>
         <button className="btn-ghost wide" onClick={async()=>{ if(dirty&&editable){ const ok=await guardar(true); if(!ok) return; } setImprimir(true); }}>🖨️ {o.estado==='borrador'?'Vista previa':'Imprimir / PDF'}</button>
         {editable&&<button className="btn-ghost wide" style={{marginTop:8}} disabled={busy||!dirty} onClick={()=>guardar(false)}>{busy?'Guardando…':'💾 Guardar borrador'}</button>}
-        {editable&&<button className="btn-save wide" style={{marginTop:8,width:'100%'}} disabled={busy||cai===undefined} onClick={emitir}>✅ Emitir remito oficial</button>}
+        {editable&&<button className="btn-save wide" style={{marginTop:8,width:'100%'}} disabled={busy||cai===undefined||!REM_OFICIAL_ON} title={REM_OFICIAL_ON?'':REM_OFICIAL_MSG} onClick={emitir}>{REM_OFICIAL_ON?'✅ Emitir remito oficial':'⏸ Emitir remito oficial (deshabilitado por ahora)'}</button>}
         {editable&&<div style={{marginTop:12}}><button className="lin-x" onClick={descartar}>Descartar borrador</button></div>}
         {puede&&o.estado==='emitido'&&<div style={{marginTop:12}}><button className="lin-lost" onClick={anular}>Anular remito</button></div>}
       </div>
@@ -1742,7 +1746,7 @@ function RemitosOficiales({perfil,showToast}){
       <div className="page-head"><h1 className="ph-title">Remitos oficiales</h1>
         <div style={{display:'flex',gap:8}}>
           {remAdmin(perfil)&&<button className="btn-ghost" onClick={()=>setVerCai(true)}>⚙️ CAI</button>}
-          {remPuede(perfil)&&<button className="btn-primary" onClick={nuevo}>+ Nuevo</button>}
+          {remPuede(perfil)&&<button className="btn-primary" onClick={nuevo} disabled={!REM_OFICIAL_ON} title={REM_OFICIAL_ON?'':REM_OFICIAL_MSG}>+ Nuevo</button>}
         </div></div>
       {cai===null&&<div className="empty" style={{background:'#FBEAEA',color:'#a82626',textAlign:'left',marginBottom:12}}>No hay CAI vigente: se pueden armar borradores pero no emitir.{remAdmin(perfil)?' Cargalo en ⚙️ CAI.':''}</div>}
       {cai&&<div className="rem-sub" style={{marginBottom:12}}>CAI vigente: PV {String(cai.punto_venta).padStart(4,'0')} · vence {remFecha(cai.cai_vto)} ({cai.dias_vto} días) · quedan {cai.restantes} números</div>}
